@@ -22,13 +22,34 @@ npm run dev
 npm run build
 npm test
 npm run test:e2e
+npm run test:production
 ```
 
 - `build`：TypeScript の型検査と本番用ビルド。生成先は `dist/`。
 - `test`：経路計算・入力検証・ブラウザ保存処理の単体テスト。
 - `test:e2e`：Chromium でデスクトップとスマートフォンの操作を確認。自宅登録、経路検索、申込体験、再読み込み後の復元、案内、削除などを検証。
+- `test:production`：公開用ビルドを作成し、ドメイン直下と `/-navi-/` 配下の両方でファイルの読み込み・自宅登録・経路検索を確認。GitHub Pages の公開前にも実行します。
 
 E2E は `/usr/bin/chromium` のブラウザを使用します。実行ファイルの環境変数による上書きには対応していません。他の環境では Chromium を用意し、必要に応じて `playwright.config.ts` の `launchOptions.executablePath` を変更してください。開発サーバーがない場合はテストが起動し、ローカル開発時はポート `5173` の既存サーバーを再利用します。CI ではテスト用にポートを空けてください。失敗時の画面・トレースは `test-results/` に出力します。
+
+## GitHub Pages で公開する
+
+公開先は [おでかけナビ なかつ](https://5rych9-star.github.io/-navi-/) です。
+
+初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** を **GitHub Actions** に設定してください。「Deploy from a branch」でソースの `index.html` をそのまま配信すると、ブラウザでは TypeScript を実行できず、白紙になる場合があります。
+
+`.github/workflows/deploy-pages.yml` は `main` へのプッシュ時に、次の処理を実行します。
+
+1. Node.js 24 で `npm ci` により依存関係を導入する。
+2. `npm test` で単体テストを実行する。
+3. `npm run test:production` で `dist/` を生成し、ルートと `/-navi-/` の両方で表示・検索できることをブラウザで確認する。
+4. `dist/` だけを GitHub Pages にデプロイする。
+
+GitHub に標準で用意されるワークフロー用トークンを使用するため、API キーや個人用トークンの追加は不要です。このワークフローが Pages の Source 設定を自動変更するわけではありません。
+
+Source の変更前にワークフローが失敗していた場合は、リポジトリの **Actions → Deploy to GitHub Pages → Run workflow** で `main` を選び、再実行してください。`build` と `deploy` の両方が成功したら公開先を再読み込みします。以前の白紙画面が残る場合は、ブラウザを強制再読み込みしてください。
+
+ビルドでは相対パスを使用するため、`/-navi-/` のようなサブディレクトリ配信と、Vercel などのドメイン直下の配信に対応します。ローカルの Vite 開発サーバーも同じコードで利用できます。
 
 ## 試せる機能
 
