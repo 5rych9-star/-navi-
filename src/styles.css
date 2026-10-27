@@ -2886,6 +2886,91 @@ button:active:not(:disabled) {
 .select-wrapper > select {
   min-height: 44px;
 }
+
+.account-strip {
+  max-width: 1136px;
+  margin: 18px auto 0;
+  padding: 13px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #d7e3d5;
+  border-radius: 12px;
+  background: #fff;
+  color: #466143;
+  font-size: 13px;
+}
+.account-strip > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.account-strip p {
+  overflow-wrap: anywhere;
+}
+.account-strip p > span {
+  margin-left: 12px;
+}
+.account-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.account-buttons .secondary-button {
+  min-height: 44px;
+  padding: 8px 15px;
+  font-size: 13px;
+}
+.data-error {
+  margin-top: 20px;
+  padding: 17px;
+  border: 1px solid #e2bba7;
+  background: #fff5ec;
+  color: #88442d;
+  border-radius: 10px;
+}
+.data-error p {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.large-text .account-strip,
+.large-text .data-error p {
+  font-size: 18px;
+}
+@media (max-width: 1200px) {
+  .account-strip {
+    margin-left: 25px;
+    margin-right: 25px;
+  }
+}
+@media (max-width: 580px) {
+  .account-strip {
+    margin: 14px 17px 0;
+    padding: 13px;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+  }
+  .account-strip > div:first-child {
+    align-items: flex-start;
+  }
+  .account-strip > div:first-child > svg {
+    margin-top: 2px;
+  }
+  .account-strip p > span {
+    display: block;
+    margin-left: 0;
+  }
+  .account-buttons {
+    margin-left: auto;
+  }
+  .account-buttons .secondary-button {
+    font-size: 13px;
+  }
+}
 .large-text .privacy-card p,
 .large-text .privacy-note,
 .large-text .demo-bar,

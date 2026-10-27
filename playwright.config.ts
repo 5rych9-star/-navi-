@@ -1,20 +1,24 @@
 import { defineConfig } from "@playwright/test";
+import { existsSync } from "node:fs";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["auth/**"],
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   workers: 2,
   reporter: "list",
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:5174",
     locale: "ja-JP",
     timezoneId: "Asia/Tokyo",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions: {
-      executablePath: "/usr/bin/chromium",
+      executablePath:
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ||
+        (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined),
       args: ["--no-sandbox"],
     },
   },
@@ -34,9 +38,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- --port 5173 --strictPort",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env.CI,
+    command: "npm run dev -- --port 5174 --strictPort",
+    url: "http://127.0.0.1:5174",
+    reuseExistingServer: false,
     timeout: 30_000,
+    env: { VITE_SUPABASE_URL: "", VITE_SUPABASE_PUBLISHABLE_KEY: "" },
   },
 });

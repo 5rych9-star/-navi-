@@ -38,7 +38,11 @@ import {
   X,
 } from "lucide-react";
 import AreaMap from "./components/AreaMap";
+import AuthDialog from "./components/AuthDialog";
 import useGeolocation from "./hooks/useGeolocation";
+import useAuth from "./hooks/useAuth";
+import useTravelData from "./hooks/useTravelData";
+import type { AuthController } from "./lib/auth";
 import {
   DESTINATIONS,
   HOME_AREAS,
@@ -48,15 +52,7 @@ import {
   type Journey,
   type JourneyStep,
 } from "./lib/transit";
-import {
-  clearUserData,
-  loadProfile,
-  loadTrips,
-  saveProfile,
-  saveTrips,
-  type Profile,
-  type SavedTrip,
-} from "./lib/storage";
+import type { Profile, SavedTrip } from "./lib/storage";
 
 type View = "search" | "results" | "journey" | "trips" | "help";
 type ModalName = "profile" | "booking" | "delete" | null;
@@ -207,10 +203,43 @@ function BusIllustration() {
 }
 
 export default function App() {
+  const auth = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
+  useEffect(() => {
+    if (auth.recovery) setAuthOpen(true);
+  }, [auth.recovery]);
+  const scope =
+    auth.status === "signedIn" ? (auth.user?.id ?? "signedOut") : auth.status;
+  return (
+    <>
+      <Workspace key={scope} auth={auth} onOpenAuth={() => setAuthOpen(true)} />
+      {authOpen && (
+        <AuthDialog auth={auth} onClose={() => setAuthOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function Workspace({
+  auth,
+  onOpenAuth,
+}: {
+  auth: AuthController;
+  onOpenAuth: () => void;
+}) {
   const gps = useGeolocation();
+  const {
+    profile,
+    trips,
+    loading: dataLoading,
+    busy: dataBusy,
+    error: dataError,
+    saveProfile,
+    saveTrips,
+    clear: clearUserData,
+    reload: reloadData,
+  } = useTravelData(auth);
   const [view, setView] = useState<View>("search");
-  const [profile, setProfile] = useState<Profile | null>(loadProfile);
-  const [trips, setTrips] = useState<SavedTrip[]>(loadTrips);
   const [destinationId, setDestinationId] = useState("");
   const [date, setDate] = useState(todayInJapan);
   const [arrivalTime, setArrivalTime] = useState("10:00");
@@ -259,13 +288,22 @@ export default function App() {
     setView(next);
   }
   function openProfile() {
+    if (auth.status !== "unconfigured" && auth.status !== "signedIn") {
+      onOpenAuth();
+      return;
+    }
+    if (dataLoading || dataBusy) return;
+    if (dataError) {
+      setNotice("登録情報を再読み込みしてから、もう一度お試しください。");
+      return;
+    }
     setNickname(profile?.nickname ?? "");
     setHomeDraft(profile?.home ?? HOME_AREAS[0]);
     setHomeLabel(profile?.home.label ?? "");
     setModalError("");
     setModal("profile");
   }
-  function registerHome(event: FormEvent) {
+  async function registerHome(event: FormEvent) {
     event.preventDefault();
     const newProfile: Profile = {
       nickname: nickname.trim(),
@@ -275,8 +313,13 @@ export default function App() {
       setModalError("お名前（ニックネーム）を入力してください。");
       return;
     }
-    const saved = saveProfile(newProfile);
-    setProfile(newProfile);
+    const saved = await saveProfile(newProfile);
+    if (!saved) {
+      setModalError(
+        "保存できませんでした。接続・保存先の設定を確認して、もう一度お試しください。",
+      );
+      return;
+    }
     setModal(null);
     setNotice(
       saved
@@ -323,7 +366,7 @@ export default function App() {
     setGuideStep(null);
     setView("journey");
   }
-  function savePlan(event: FormEvent) {
+  async function savePlan(event: FormEvent) {
     event.preventDefault();
     if (!selectedJourney || !journeyProfile || !confirmed) return;
     if (trips.some((trip) => trip.journey.id === selectedJourney.id)) {
@@ -339,26 +382,24 @@ export default function App() {
       status: "saved",
     };
     const next = [trip, ...trips];
-    if (!saveTrips(next)) {
+    if (!(await saveTrips(next))) {
       setModalError(
         "予定を保存できませんでした。ブラウザの保存設定や空き容量をご確認ください。実際の予約は送信されていません。",
       );
       return;
     }
-    setTrips(next);
     setModal(null);
     setView("trips");
     setNotice(
       "体験用のおでかけ予定を保存しました。実際の予約は送信されていません。",
     );
   }
-  function removeTrip(id: string) {
+  async function removeTrip(id: string) {
     const next = trips.filter((trip) => trip.id !== id);
-    if (!saveTrips(next)) {
+    if (!(await saveTrips(next))) {
       setNotice("削除できませんでした。ブラウザの保存設定をご確認ください。");
       return;
     }
-    setTrips(next);
     setNotice("保存した予定を削除しました。");
   }
   function choosePopular(id: string) {
@@ -466,7 +507,70 @@ export default function App() {
         </span>
       </div>
 
+      <section className="account-strip" aria-label="ログイン状態">
+        <div>
+          <ShieldCheck size={20} />
+          <p>
+            {auth.status === "signedIn" ? (
+              <>
+                <strong>ログイン中</strong>
+                <span>{auth.user?.email ?? "ご自身のアカウント"}</span>
+              </>
+            ) : auth.status === "loading" ? (
+              "ログイン状態を確認しています…"
+            ) : auth.status === "unconfigured" ? (
+              "現在は端末内の体験版です。ログインは接続設定後に利用できます。"
+            ) : (
+              "ログインすると、ご自宅・予定を自分のアカウントに保存できます。"
+            )}
+          </p>
+        </div>
+        <div className="account-buttons">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              gps.stop();
+              onOpenAuth();
+            }}
+            disabled={auth.status === "loading"}
+          >
+            {auth.status === "signedIn" ? "アカウント" : "ログイン"}
+          </button>
+          {auth.status === "signedIn" && (
+            <button
+              className="text-button"
+              type="button"
+              disabled={dataBusy}
+              onClick={async () => {
+                gps.stop();
+                await auth.signOut();
+              }}
+            >
+              ログアウト
+            </button>
+          )}
+        </div>
+      </section>
       <main id="main-content" className="main-container">
+        {dataLoading && (
+          <div className="inline-notice" role="status">
+            <Info size={19} />
+            <p>ご自身の登録情報を読み込んでいます…</p>
+          </div>
+        )}
+        {dataError && (
+          <div className="data-error" role="alert">
+            <p>{dataError}</p>
+            <button
+              className="secondary-button"
+              disabled={dataBusy || dataLoading}
+              onClick={reloadData}
+            >
+              登録情報を再読み込み
+            </button>
+          </div>
+        )}
         {view === "search" && (
           <>
             <section className="hero">
@@ -1104,7 +1208,10 @@ export default function App() {
             <div className="inline-notice">
               <Info size={20} />
               <p>
-                ここに表示される予定は、このブラウザに保存した体験用のものです。バス事業者への予約・連絡は行われません。
+                {auth.status === "signedIn"
+                  ? "ここに表示される予定は、ご自身のアカウントに保存した体験用のものです。"
+                  : "ここに表示される予定は、このブラウザに保存した体験用のものです。"}
+                バス事業者への予約・連絡は行われません。
               </p>
             </div>
             {trips.length ? (
@@ -1238,7 +1345,10 @@ export default function App() {
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  お名前、ご自宅の場所、おでかけ予定は、このブラウザ内だけに保存し、アプリのサーバーや他の利用者には共有しません。GPSの現在地は履歴として保存せず、停止や画面を離れたときに消します。「現在地を自宅に設定」して登録を確定した場合だけ、その場所をご自宅として保存します。航空写真の表示時には、表示範囲の画像リクエストとIPアドレスが国土地理院へ送信されます。共用端末では利用後に登録情報を削除してください。
+                  {auth.status === "unconfigured"
+                    ? "現在の端末内体験版では、お名前・自宅・予定をこのブラウザだけに保存します。"
+                    : "ログインすると、お名前・自宅・予定をSupabaseのデータベースに保存します。サーバー側のアクセス制限で、ログイン中のご本人だけが読み書きできます。旧体験版の端末内データは自動アップロードしません。"}
+                  GPSの現在地は履歴として保存しません。「現在地を自宅に設定」して登録を確定した場合だけ、その場所を自宅情報として保存します。航空写真の表示時には表示範囲とIPアドレスが国土地理院へ伝わります。共用端末では利用後にログアウトしてください。端末内の体験データは削除してからお使いください。
                 </p>
               </details>
               <details>
@@ -1265,7 +1375,7 @@ export default function App() {
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  画面を開いた後のサンプル経路検索と予定の保存は、外部サービスへの接続なしで動作します。航空写真の読み込みにはインターネット接続が必要です。オフラインでの再読み込みや本当の運行情報には対応していません。
+                  サンプルの経路計算は端末内で行いますが、ログイン・アカウントへの保存・航空写真の読み込みにはインターネット接続が必要です。未接続の端末内体験版では、このブラウザへの保存を利用できます。オフラインでの再読み込みや本当の運行情報には対応していません。
                 </p>
               </details>
             </section>
@@ -1275,7 +1385,9 @@ export default function App() {
                 <div>
                   <h2>登録情報の管理</h2>
                   <p>
-                    このブラウザに保存した、ご自宅とすべての予定を削除できます。
+                    {auth.status === "signedIn"
+                      ? "ご自身のアカウントに保存した自宅・予定を削除できます。ログイン用アカウントは残ります。"
+                      : "このブラウザに保存した、ご自宅とすべての予定を削除できます。"}
                   </p>
                 </div>
               </div>
@@ -1427,14 +1539,20 @@ export default function App() {
             </div>
             <p className="privacy-note">
               <ShieldCheck size={18} />
-              登録情報はこのブラウザだけに保存されます。
+              {auth.status === "signedIn"
+                ? "登録内容はご自身のアカウントに保存されます。"
+                : "登録情報はこのブラウザだけに保存されます。"}
             </p>
             {modalError && (
               <p className="error-message" role="alert">
                 {modalError}
               </p>
             )}
-            <button className="primary-button" type="submit">
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={dataBusy || dataLoading}
+            >
               <Check size={21} />
               この内容で登録する
             </button>
@@ -1514,7 +1632,7 @@ export default function App() {
             )}
             <button
               className="primary-button"
-              disabled={!confirmed}
+              disabled={!confirmed || dataBusy || dataLoading}
               type="submit"
             >
               <CalendarDays size={21} />
@@ -1533,7 +1651,10 @@ export default function App() {
       {modal === "delete" && (
         <Modal title="登録情報を削除しますか？" onClose={() => setModal(null)}>
           <p className="modal-description">
-            このブラウザに保存したお名前、ご自宅の場所、すべてのおでかけ予定を削除します。削除した情報は元に戻せません。
+            {auth.status === "signedIn"
+              ? "ご自身のアカウントに保存したお名前・自宅・予定を削除します。ログイン用アカウントは残ります。"
+              : "このブラウザに保存したお名前、ご自宅の場所、すべてのおでかけ予定を削除します。"}
+            削除した情報は元に戻せません。
           </p>
           {modalError && (
             <p className="error-message" role="alert">
@@ -1546,23 +1667,26 @@ export default function App() {
             </button>
             <button
               className="danger-button"
-              onClick={() => {
+              disabled={dataBusy || dataLoading}
+              onClick={async () => {
                 gps.stop();
-                if (!clearUserData()) {
+                if (!(await clearUserData())) {
                   setModalError(
                     "削除できませんでした。ブラウザの保存設定をご確認ください。",
                   );
                   return;
                 }
-                setProfile(null);
-                setTrips([]);
                 setJourneyProfile(null);
                 setSelectedJourney(null);
                 setNickname("");
                 setHomeLabel("");
                 setHomeDraft(HOME_AREAS[0]);
                 setModal(null);
-                setNotice("このブラウザの登録情報を削除しました。");
+                setNotice(
+                  auth.status === "signedIn"
+                    ? "アカウントの自宅・予定を削除しました。"
+                    : "このブラウザの登録情報を削除しました。",
+                );
               }}
             >
               すべて削除する

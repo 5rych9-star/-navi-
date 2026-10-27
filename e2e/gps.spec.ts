@@ -6,6 +6,102 @@ const fixtureTile =
   '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#d5ded0"/><path d="M0 128H256M128 0V256" stroke="#fff" stroke-width="8"/></svg>';
 const testLocation = { latitude: 33.58642, longitude: 131.19876, accuracy: 12 };
 
+test("耶馬溪・詳細・拡大表示で元画像の上限を守り、自宅を勝手に変更しない", async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  const mobile = testInfo.project.name === "mobile";
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: mobile ? 390 : 1440, height: mobile ? 844 : 1000 },
+    deviceScaleFactor: mobile ? 2 : 1,
+    isMobile: mobile,
+    hasTouch: mobile,
+    locale: "ja-JP",
+  });
+  try {
+    const page = await context.newPage();
+    const requests = await provideFixtureTiles(page);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "ご自宅を登録する", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "ご自宅を登録しましょう" });
+    await dialog.getByLabel("お名前（ニックネーム）").fill("写真の利用者");
+    await dialog
+      .getByRole("button", { name: "航空写真を表示", exact: true })
+      .click();
+    await dialog.locator(".leaflet-tile-loaded").first().waitFor();
+    await dialog
+      .getByRole("button", { name: "耶馬溪周辺を見る", exact: true })
+      .click();
+    await dialog
+      .getByRole("button", { name: "写真を詳しく見る", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        requests.some(
+          (url) => Number(new URL(url).pathname.split("/")[3]) === 18,
+        ),
+      )
+      .toBe(true);
+    const zoomIn = dialog.getByRole("button", {
+      name: "航空写真を拡大",
+      exact: true,
+    });
+    for (let count = 0; count < 4; count++) {
+      if ((await zoomIn.getAttribute("aria-disabled")) === "true") break;
+      await zoomIn.click();
+    }
+    await dialog
+      .getByRole("button", { name: "地図を大きく表示", exact: true })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (await dialog.locator(".aerial-map-frame").boundingBox())?.height ??
+          0,
+      )
+      .toBeGreaterThanOrEqual(500);
+    await dialog
+      .getByRole("button", { name: "通常の大きさに戻す", exact: true })
+      .click();
+    await expect(
+      dialog.getByRole("button", {
+        name: "地図の中心を自宅に設定",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    expect(
+      requests.every(
+        (url) => Number(new URL(url).pathname.split("/")[3]) <= 18,
+      ),
+    ).toBe(true);
+    // Removing a map immediately after zoom used to leave a delayed handler.
+    await dialog
+      .getByRole("button", { name: "航空写真を縮小", exact: true })
+      .click();
+    await dialog
+      .getByRole("button", { name: "この内容で登録する", exact: true })
+      .click();
+    await expect(dialog).not.toBeVisible();
+    const saved = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("nakatsu-profile-v1") ?? "null"),
+    );
+    expect(saved.home).toMatchObject({
+      id: "oki",
+      lat: 33.5856,
+      lng: 131.1964,
+    });
+    await page.waitForTimeout(300);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
 async function provideFixtureTiles(page: Page) {
   const requests: string[] = [];
   await page.route(tilePattern, async (route) => {

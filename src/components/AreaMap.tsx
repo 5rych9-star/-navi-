@@ -2,6 +2,13 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
 import type { GeoController } from "../lib/geolocation";
+import {
+  AERIAL_DISPLAY_MAX_ZOOM,
+  AERIAL_TILE_URL,
+  AERIAL_VIEW_AREAS,
+  getAerialDetailZoom,
+  getAerialTileOptions,
+} from "../lib/imagery";
 import "leaflet/dist/leaflet.css";
 import "./AreaMap.css";
 
@@ -20,7 +27,6 @@ export type AreaMapProps = {
 };
 
 const DEFAULT_HOME = { lat: 33.5856, lng: 131.1964, label: "ご自宅" };
-const PHOTO_URL = "https://maps.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg";
 const HOME_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="48" viewBox="0 0 42 48" aria-hidden="true"><path d="M21 47S3 30 3 20a18 18 0 0 1 36 0c0 10-18 27-18 27Z" fill="#236750" stroke="#fff" stroke-width="2"/><path d="m10 20 11-10 11 10M13 18v13h16V18M19 31v-8h5v8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const DESTINATION_ICON =
@@ -62,6 +68,9 @@ export default function AreaMap({
   const [tileError, setTileError] = useState(false);
   const [initializationError, setInitializationError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [displayZoom, setDisplayZoom] = useState(16);
+  const [viewNotice, setViewNotice] = useState("");
   const interactive = mode === "home" && Boolean(onSelect);
 
   gpsRef.current = gps;
@@ -108,9 +117,13 @@ export default function AreaMap({
           center: [home.lat, home.lng],
           zoom: 16,
           minZoom: 2,
-          maxZoom: 18,
+          maxZoom: AERIAL_DISPLAY_MAX_ZOOM,
           keyboard: false,
           zoomControl: true,
+          // A profile dialog can close immediately after a zoom action. Avoid
+          // Leaflet's deferred zoom callback running after its map is removed.
+          zoomAnimation: false,
+          markerZoomAnimation: false,
           attributionControl: false,
           scrollWheelZoom: false,
           doubleClickZoom: false,
@@ -127,9 +140,8 @@ export default function AreaMap({
         zoomIn?.setAttribute("title", "航空写真を拡大");
         zoomOut?.setAttribute("aria-label", "航空写真を縮小");
         zoomOut?.setAttribute("title", "航空写真を縮小");
-        const tiles = L.tileLayer(PHOTO_URL, {
-          minZoom: 2,
-          maxZoom: 18,
+        const tiles = L.tileLayer(AERIAL_TILE_URL, {
+          ...getAerialTileOptions(L.Browser.retina),
           crossOrigin: "anonymous",
           referrerPolicy: "no-referrer",
           attribution: "出典：国土地理院",
@@ -148,6 +160,9 @@ export default function AreaMap({
           }
         });
         tiles.addTo(map);
+        map.on("zoomend", () => {
+          if (!disposed) setDisplayZoom(map.getZoom());
+        });
         map.on("click", (event) => {
           if (!interactiveRef.current) return;
           markPending(false);
@@ -170,6 +185,7 @@ export default function AreaMap({
         map.whenReady(() => {
           if (!disposed) {
             map.invalidateSize({ pan: false });
+            setDisplayZoom(map.getZoom());
             setReady(true);
           }
         });
@@ -195,6 +211,11 @@ export default function AreaMap({
       centeredGps.current = false;
     };
   }, [visible, attempt]);
+
+  useEffect(() => {
+    if (!visible || !ready) return;
+    mapRef.current?.invalidateSize({ pan: false });
+  }, [expanded, visible, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -359,7 +380,30 @@ export default function AreaMap({
     setVisible(false);
     setReady(false);
     setLoadingTiles(false);
+    setExpanded(false);
+    setViewNotice("");
     markPending(false);
+  }
+
+  function showRegion(area: (typeof AERIAL_VIEW_AREAS)[number]) {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setView([area.lat, area.lng], area.zoom, { animate: false });
+    markPending(false);
+    setViewNotice(
+      `${area.label}の目安の位置へ移動しました。ご自宅の登録は変更していません。`,
+    );
+  }
+
+  function showPhotographDetail() {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !L) return;
+    map.setZoom(getAerialDetailZoom(L.Browser.retina), { animate: false });
+    markPending(false);
+    setViewNotice(
+      "元の写真が持つ細かさで表示しました。写真の撮影時期や解像度は地域によって異なります。ご自宅の登録は変更していません。",
+    );
   }
 
   function startGps() {
@@ -392,7 +436,7 @@ export default function AreaMap({
 
   return (
     <section
-      className={`area-map area-map--aerial${compact ? " area-map--compact" : ""}`}
+      className={`area-map area-map--aerial${compact ? " area-map--compact" : ""}${expanded ? " area-map--expanded" : ""}`}
       aria-label="航空写真と現在地"
     >
       {!visible ? (
@@ -458,6 +502,54 @@ export default function AreaMap({
             </button>
           </div>
           <div
+            className="aerial-view-tools"
+            role="group"
+            aria-label="航空写真の表示設定"
+          >
+            <div className="aerial-region-controls">
+              <span>地域へ移動</span>
+              {AERIAL_VIEW_AREAS.map((area) => (
+                <button
+                  key={area.id}
+                  type="button"
+                  className="aerial-button"
+                  disabled={!ready}
+                  onClick={() => showRegion(area)}
+                >
+                  {area.label}を見る
+                </button>
+              ))}
+            </div>
+            <div className="aerial-detail-controls">
+              <button
+                type="button"
+                className="aerial-button"
+                disabled={!ready}
+                onClick={showPhotographDetail}
+              >
+                写真を詳しく見る
+              </button>
+              <button
+                type="button"
+                className="aerial-button"
+                disabled={!ready}
+                aria-pressed={expanded}
+                aria-controls={`${id}-map`}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? "通常の大きさに戻す" : "地図を大きく表示"}
+              </button>
+            </div>
+            <p className="aerial-resolution-note">
+              撮影時期・写真の細かさは地域で異なります。18より先は写真の拡大表示です。元画像の解像度は上がりません。
+            </p>
+            <p className="aerial-view-status" aria-live="polite">
+              {viewNotice}
+              {displayZoom > 18 && "現在は元の写真を拡大して表示しています。"}
+            </p>
+          </div>
+          <div
+            id={`${id}-map`}
             className="map-canvas aerial-map-frame"
             role="group"
             tabIndex={0}

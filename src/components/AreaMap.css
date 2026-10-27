@@ -104,6 +104,43 @@
   color: #38533f;
 }
 
+.area-map--aerial .aerial-view-tools {
+  padding: 12px;
+  border-top: 1px solid #d8e2d6;
+  border-bottom: 1px solid #d8e2d6;
+  background: #f7faf4;
+}
+
+.area-map--aerial .aerial-region-controls,
+.area-map--aerial .aerial-detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.area-map--aerial .aerial-region-controls > span {
+  color: #405640;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.area-map--aerial .aerial-detail-controls {
+  margin-top: 10px;
+}
+
+.area-map--aerial .aerial-resolution-note,
+.area-map--aerial .aerial-view-status {
+  color: #465c49;
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 10px 0 0;
+}
+
+.area-map--aerial .aerial-view-status:empty {
+  display: none;
+}
+
 .area-map--aerial .aerial-button--quiet {
   font-size: 12px;
   padding-inline: 10px;
@@ -365,6 +402,12 @@
   font-size: 16px;
 }
 
+.large-text .area-map.area-map--aerial .aerial-region-controls > span,
+.large-text .area-map.area-map--aerial .aerial-resolution-note,
+.large-text .area-map.area-map--aerial .aerial-view-status {
+  font-size: 16px;
+}
+
 @media (max-width: 480px) {
   .area-map--aerial .aerial-consent {
     padding: 20px 16px;
@@ -387,4 +430,9 @@
   .area-map--aerial .aerial-gps-actions .aerial-button {
     flex: 1 1 auto;
   }
+}
+
+.area-map.area-map--aerial.area-map--expanded .map-canvas {
+  height: 520px;
+  min-height: 520px;
 }

@@ -211,3 +211,7 @@ export function clearUserData(): boolean {
   }
   return success;
 }
+
+// Reuse the same nested-data checks at the authenticated server-data boundary.
+// Export aliases keep the existing local storage behavior unchanged.
+export { profile as isProfile, trip as isSavedTrip };

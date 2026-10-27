@@ -179,6 +179,7 @@ test("地図をキーボードで設定し、登録情報だけを削除でき�
     name: "自宅を選ぶ航空写真地図",
     exact: false,
   });
+  await expect(map).toHaveAttribute("aria-busy", "false");
   await map.focus();
   await map.press("ArrowLeft");
   await map.press("ArrowUp");
@@ -330,6 +331,7 @@ test("地域を選んだ直後に地図でEnterを押しても自宅の座標を
     name: "自宅を選ぶ航空写真地図",
     exact: false,
   });
+  await expect(map).toHaveAttribute("aria-busy", "false");
   await map.focus();
   await map.press("Enter");
   await expect(area).toHaveAttribute("aria-pressed", "true");

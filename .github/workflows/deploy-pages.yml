@@ -40,8 +40,14 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Verify login and account isolation with HTTP fixtures
+        run: npm run test:auth
+
       - name: Build and verify root and GitHub Pages paths
         run: npm run test:production
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Upload built site
         uses: actions/upload-pages-artifact@v4

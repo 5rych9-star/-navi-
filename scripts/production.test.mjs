@@ -6,13 +6,86 @@ import { resolve, sep, extname } from "node:path";
 import test from "node:test";
 import { chromium } from "@playwright/test";
 
-const directory = resolve(import.meta.dirname, "../dist");
+const directory = process.env.PRODUCTION_DIST_DIR
+  ? resolve(process.env.PRODUCTION_DIST_DIR)
+  : resolve(import.meta.dirname, "../dist");
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
 };
+
+// Exercise configured builds without a real project, password or email send.
+// The actual SDK still parses the fixture session and makes the scoped calls.
+async function mockAccountService(page) {
+  const owner = "11111111-1111-4111-8111-111111111111";
+  let row = null;
+  const routeHandler = async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const reply = (status, body) =>
+      route.fulfill({
+        status,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-headers": "*",
+        },
+        ...(body === undefined
+          ? {}
+          : { contentType: "application/json", body: JSON.stringify(body) }),
+      });
+    if (request.method() === "OPTIONS") return reply(204);
+    const user = {
+      id: owner,
+      aud: "authenticated",
+      role: "authenticated",
+      email: "production-fixture@example.test",
+      email_confirmed_at: "2026-10-27T00:00:00Z",
+      created_at: "2026-10-27T00:00:00Z",
+      updated_at: "2026-10-27T00:00:00Z",
+      app_metadata: { provider: "email", providers: ["email"] },
+      user_metadata: {},
+      identities: [],
+    };
+    if (url.pathname === "/auth/v1/token") {
+      const now = Math.floor(Date.now() / 1000);
+      const encode = (value) =>
+        Buffer.from(JSON.stringify(value)).toString("base64url");
+      const token = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ sub: owner, aud: "authenticated", role: "authenticated", iss: `${url.origin}/auth/v1`, iat: now, exp: now + 3600, session_id: "33333333-3333-4333-8333-333333333333" })}.Zml4dHVyZS1vbmx5`;
+      return reply(200, {
+        access_token: token,
+        refresh_token: "production-fixture-refresh",
+        expires_in: 3600,
+        expires_at: now + 3600,
+        token_type: "bearer",
+        user,
+      });
+    }
+    if (url.pathname === "/auth/v1/user") return reply(200, user);
+    if (url.pathname === "/auth/v1/logout") return reply(204);
+    if (
+      url.pathname === "/rest/v1/user_travel_data" &&
+      url.searchParams.get("user_id") === `eq.${owner}`
+    ) {
+      if (request.method() === "GET") return reply(200, row ? [row] : []);
+      if (request.method() === "POST") {
+        const next = request.postDataJSON();
+        if (next.user_id !== owner)
+          return reply(403, { message: "Fixture owner mismatch" });
+        row = next;
+        return reply(201, []);
+      }
+      if (request.method() === "DELETE") {
+        row = null;
+        return reply(204);
+      }
+    }
+    return reply(404, { message: "Unexpected fixture endpoint" });
+  };
+  await page.route("**/auth/v1/**", routeHandler);
+  await page.route("**/rest/v1/user_travel_data*", routeHandler);
+}
 
 // No SPA fallback: missing assets and requests outside the Pages prefix must
 // fail, just as they do on GitHub Pages. Each prefix gets a separate server.
@@ -68,6 +141,7 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
       });
       try {
         const page = await context.newPage();
+        await mockAccountService(page);
         let tileRequests = 0;
         await page.route(
           "https://maps.gsi.go.jp/xyz/seamlessphoto/**",
@@ -107,6 +181,37 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
         await page
           .getByRole("heading", { name: "どこへおでかけしますか？" })
           .waitFor({ timeout: 5000 });
+        await page
+          .getByRole("region", { name: "ログイン状態" })
+          .getByRole("button", { name: "ログイン", exact: true })
+          .click();
+        const authDialog = page.getByRole("dialog");
+        if (
+          await authDialog
+            .getByRole("heading", { name: "ログインの準備中", exact: true })
+            .count()
+        ) {
+          await authDialog
+            .getByRole("button", { name: "ログイン画面を閉じる" })
+            .click();
+        } else {
+          await authDialog
+            .getByLabel("メールアドレス", { exact: true })
+            .fill("production-fixture@example.test");
+          await authDialog
+            .getByLabel("パスワード", { exact: true })
+            .fill("FIXTURE_ONLY_Production_123!");
+          await authDialog
+            .getByRole("button", { name: "ログインする", exact: true })
+            .click();
+          await page
+            .getByRole("button", { name: "ログアウト", exact: true })
+            .waitFor();
+          await page
+            .getByRole("status")
+            .filter({ hasText: "ご自身の登録情報を読み込んでいます" })
+            .waitFor({ state: "detached" });
+        }
         assert.equal(tileRequests, 0, "航空写真は明示操作まで読み込まないこと");
         // Exercise the lazy Leaflet chunk from the deployed subdirectory too.
         // This is a fixture tile and simulated GPS, not a live GSI/device check.
