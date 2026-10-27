@@ -1,94 +1,35 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent } from "react";
+import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
+import type { GeoController } from "../lib/geolocation";
+import "leaflet/dist/leaflet.css";
+import "./AreaMap.css";
 
 type MapLocation = { lat: number; lng: number; label?: string };
+type SelectedLocation = { lat: number; lng: number; label: string };
+type LeafletModule = typeof import("leaflet");
 
 export type AreaMapProps = {
   mode?: "home" | "journey";
   selected?: MapLocation;
-  onSelect?: (location: { lat: number; lng: number; label: string }) => void;
+  onSelect?: (location: SelectedLocation) => void;
   destination?: { lat: number; lng: number; name: string };
   compact?: boolean;
+  gps?: GeoController;
+  onUseCurrentLocation?: (location: SelectedLocation) => void;
 };
 
-const WIDTH = 760;
-const HEIGHT = 430;
-const CENTER = { lat: 33.586, lng: 131.19 };
-const LATITUDE_SPAN = 0.064;
-const LONGITUDE_SPAN = 0.06;
-const DEFAULT_HOME = { lat: 33.591, lng: 131.178, label: "自宅" };
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
+const DEFAULT_HOME = { lat: 33.5856, lng: 131.1964, label: "ご自宅" };
+const PHOTO_URL = "https://maps.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg";
+const HOME_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="48" viewBox="0 0 42 48" aria-hidden="true"><path d="M21 47S3 30 3 20a18 18 0 0 1 36 0c0 10-18 27-18 27Z" fill="#236750" stroke="#fff" stroke-width="2"/><path d="m10 20 11-10 11 10M13 18v13h16V18M19 31v-8h5v8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DESTINATION_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="48" viewBox="0 0 42 48" aria-hidden="true"><path d="M21 47S3 30 3 20a18 18 0 0 1 36 0c0 10-18 27-18 27Z" fill="#8a5830" stroke="#fff" stroke-width="2"/><circle cx="21" cy="20" r="7" fill="none" stroke="#fff" stroke-width="3"/></svg>';
 
-function toPoint(location: MapLocation) {
-  return {
-    x: clamp(
-      WIDTH / 2 + ((location.lng - CENTER.lng) / LONGITUDE_SPAN) * WIDTH,
-      42,
-      WIDTH - 42,
-    ),
-    y: clamp(
-      HEIGHT / 2 - ((location.lat - CENTER.lat) / LATITUDE_SPAN) * HEIGHT,
-      50,
-      HEIGHT - 44,
-    ),
-  };
-}
-
-function toLocation(point: { x: number; y: number }) {
-  return {
-    lat: Number(
-      (CENTER.lat - ((point.y - HEIGHT / 2) / HEIGHT) * LATITUDE_SPAN).toFixed(
-        6,
-      ),
-    ),
-    lng: Number(
-      (CENTER.lng + ((point.x - WIDTH / 2) / WIDTH) * LONGITUDE_SPAN).toFixed(
-        6,
-      ),
-    ),
-    label: "地図で選んだ自宅",
-  };
-}
-
-function Tree({ x, y, size = 1 }: { x: number; y: number; size?: number }) {
-  return (
-    <g transform={`translate(${x} ${y}) scale(${size})`}>
-      <rect x="-1.5" y="3" width="3" height="9" rx="1.5" fill="#8f9b79" />
-      <circle cx="0" cy="0" r="9" fill="#b3c79d" />
-      <circle cx="-3" cy="-2" r="5.5" fill="#c4d3ae" />
-    </g>
-  );
-}
-
-function BusStop({ x, y, label }: { x: number; y: number; label?: string }) {
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <circle r="11" fill="#fff" stroke="#94ad9a" strokeWidth="1.5" />
-      <rect x="-5" y="-6" width="10" height="10" rx="2" fill="#6d8f7a" />
-      <rect x="-3.3" y="-4.3" width="6.6" height="3.5" rx=".6" fill="#fff" />
-      <circle cx="-2.7" cy="2" r="1" fill="#fff" />
-      <circle cx="2.7" cy="2" r="1" fill="#fff" />
-      <path
-        d="M-3 4v2M3 4v2"
-        stroke="#6d8f7a"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      {label && (
-        <text
-          x="0"
-          y="29"
-          textAnchor="middle"
-          fontSize="12"
-          fontWeight="600"
-          fill="#6b786b"
-        >
-          {label}
-        </text>
-      )}
-    </g>
-  );
+function tooltipText(text: string) {
+  const element = document.createElement("span");
+  element.textContent = text;
+  return element;
 }
 
 export default function AreaMap({
@@ -97,444 +38,585 @@ export default function AreaMap({
   onSelect,
   destination,
   compact = false,
+  gps,
+  onUseCurrentLocation,
 }: AreaMapProps) {
-  const mapId = useId();
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [point, setPoint] = useState(() => toPoint(selected ?? DEFAULT_HOME));
+  const id = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const leafletRef = useRef<LeafletModule | null>(null);
+  const tilesRef = useRef<TileLayer | null>(null);
+  const placesRef = useRef<LayerGroup | null>(null);
+  const gpsLayerRef = useRef<LayerGroup | null>(null);
+  const gpsRef = useRef(gps);
+  const selectedRef = useRef(selected ?? DEFAULT_HOME);
+  const onSelectRef = useRef(onSelect);
+  const interactiveRef = useRef(mode === "home" && Boolean(onSelect));
+  const gpsStartedHere = useRef(false);
+  const centeredGps = useRef(false);
+  const pendingRef = useRef(false);
+  const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
   const [pending, setPending] = useState(false);
+  const [loadingTiles, setLoadingTiles] = useState(false);
+  const [tileError, setTileError] = useState(false);
+  const [initializationError, setInitializationError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const interactive = mode === "home" && Boolean(onSelect);
-  const destinationPoint = destination
-    ? toPoint(destination)
-    : { x: 530, y: 128 };
 
-  useEffect(() => {
-    setPoint(toPoint(selected ?? DEFAULT_HOME));
-    setPending(false);
-  }, [selected?.lat, selected?.lng]);
+  gpsRef.current = gps;
+  selectedRef.current = selected ?? DEFAULT_HOME;
+  onSelectRef.current = onSelect;
+  interactiveRef.current = interactive;
 
-  function selectPoint(nextPoint: { x: number; y: number }) {
-    setPoint(nextPoint);
-    setPending(false);
-    onSelect?.(toLocation(nextPoint));
+  function markPending(value: boolean) {
+    pendingRef.current = value;
+    setPending(value);
   }
 
-  function handleClick(event: MouseEvent<HTMLDivElement>) {
-    if (!interactive || !svgRef.current) return;
-    const svg = svgRef.current;
-    const matrix = svg.getScreenCTM();
-    if (!matrix) return;
-    const cursor = svg.createSVGPoint();
-    cursor.x = event.clientX;
-    cursor.y = event.clientY;
-    const position = cursor.matrixTransform(matrix.inverse());
-    selectPoint({
-      x: clamp(position.x, 42, WIDTH - 42),
-      y: clamp(position.y, 50, HEIGHT - 44),
+  function commitCenter() {
+    const map = mapRef.current;
+    if (!interactiveRef.current || !map || !pendingRef.current) return;
+    const center = map.wrapLatLng(map.getCenter());
+    markPending(false);
+    onSelectRef.current?.({
+      lat: center.lat,
+      lng: center.lng,
+      label: "航空写真で選んだご自宅",
     });
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (!interactive) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      if (pending) selectPoint(point);
+  useEffect(() => {
+    if (!visible || !containerRef.current) return;
+    let disposed = false;
+    let localMap: LeafletMap | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    setReady(false);
+    setInitializationError(false);
+    setLoadingTiles(true);
+    setTileError(false);
+    markPending(false);
+
+    async function initialize() {
+      try {
+        const imported = await import("leaflet");
+        if (disposed || !containerRef.current) return;
+        const L = imported.default ?? imported;
+        leafletRef.current = L;
+        const home = selectedRef.current;
+        const map = L.map(containerRef.current, {
+          center: [home.lat, home.lng],
+          zoom: 16,
+          minZoom: 2,
+          maxZoom: 18,
+          keyboard: false,
+          zoomControl: true,
+          attributionControl: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+        });
+        localMap = map;
+        mapRef.current = map;
+        const zoomIn = containerRef.current.querySelector<HTMLAnchorElement>(
+          ".leaflet-control-zoom-in",
+        );
+        const zoomOut = containerRef.current.querySelector<HTMLAnchorElement>(
+          ".leaflet-control-zoom-out",
+        );
+        zoomIn?.setAttribute("aria-label", "航空写真を拡大");
+        zoomIn?.setAttribute("title", "航空写真を拡大");
+        zoomOut?.setAttribute("aria-label", "航空写真を縮小");
+        zoomOut?.setAttribute("title", "航空写真を縮小");
+        const tiles = L.tileLayer(PHOTO_URL, {
+          minZoom: 2,
+          maxZoom: 18,
+          crossOrigin: "anonymous",
+          referrerPolicy: "no-referrer",
+          attribution: "出典：国土地理院",
+        });
+        tilesRef.current = tiles;
+        tiles.on("loading", () => {
+          if (!disposed) setLoadingTiles(true);
+        });
+        tiles.on("load", () => {
+          if (!disposed) setLoadingTiles(false);
+        });
+        tiles.on("tileerror", () => {
+          if (!disposed) {
+            setTileError(true);
+            setLoadingTiles(false);
+          }
+        });
+        tiles.addTo(map);
+        map.on("click", (event) => {
+          if (!interactiveRef.current) return;
+          markPending(false);
+          const location = map.wrapLatLng(event.latlng);
+          onSelectRef.current?.({
+            lat: location.lat,
+            lng: location.lng,
+            label: "航空写真で選んだご自宅",
+          });
+        });
+        map.on("dragend", () => {
+          if (interactiveRef.current) markPending(true);
+        });
+        if (typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => {
+            if (!disposed) map.invalidateSize({ pan: false });
+          });
+          resizeObserver.observe(containerRef.current);
+        }
+        map.whenReady(() => {
+          if (!disposed) {
+            map.invalidateSize({ pan: false });
+            setReady(true);
+          }
+        });
+      } catch {
+        if (!disposed) {
+          setInitializationError(true);
+          setLoadingTiles(false);
+        }
+      }
+    }
+    void initialize();
+    return () => {
+      disposed = true;
+      resizeObserver?.disconnect();
+      if (localMap) {
+        localMap.off();
+        localMap.remove();
+      }
+      if (mapRef.current === localMap) mapRef.current = null;
+      tilesRef.current = null;
+      placesRef.current = null;
+      gpsLayerRef.current = null;
+      centeredGps.current = false;
+    };
+  }, [visible, attempt]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!visible || !ready || !map || !L) return;
+    const home = selected ?? DEFAULT_HOME;
+    placesRef.current?.remove();
+    const places = L.layerGroup().addTo(map);
+    placesRef.current = places;
+    const homeIcon = L.divIcon({
+      className: "aerial-place-icon",
+      html: HOME_ICON,
+      iconSize: [42, 48],
+      iconAnchor: [21, 47],
+      tooltipAnchor: [0, -42],
+    });
+    L.marker([home.lat, home.lng], {
+      icon: homeIcon,
+      title: "ご自宅",
+      keyboard: false,
+    })
+      .bindTooltip(tooltipText(home.label ?? "ご自宅"), {
+        direction: "top",
+        className: "aerial-place-label",
+      })
+      .addTo(places);
+    if (mode === "journey" && destination) {
+      const destinationIcon = L.divIcon({
+        className: "aerial-place-icon",
+        html: DESTINATION_ICON,
+        iconSize: [42, 48],
+        iconAnchor: [21, 47],
+        tooltipAnchor: [0, -42],
+      });
+      L.marker([destination.lat, destination.lng], {
+        icon: destinationIcon,
+        title: destination.name,
+        keyboard: false,
+      })
+        .bindTooltip(tooltipText(destination.name), {
+          direction: "top",
+          className: "aerial-place-label",
+        })
+        .addTo(places);
+      map.fitBounds(
+        [
+          [home.lat, home.lng],
+          [destination.lat, destination.lng],
+        ],
+        {
+          padding: [38, 45],
+          maxZoom: 15,
+          animate: false,
+        },
+      );
+    } else {
+      map.setView([home.lat, home.lng], 16, { animate: false });
+    }
+    markPending(false);
+  }, [
+    visible,
+    ready,
+    selected?.lat,
+    selected?.lng,
+    selected?.label,
+    destination?.lat,
+    destination?.lng,
+    destination?.name,
+    mode,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!visible || !ready || !map || !L) return;
+    gpsLayerRef.current?.remove();
+    gpsLayerRef.current = null;
+    if (!gps?.position || gps.status !== "active") {
+      centeredGps.current = false;
       return;
     }
-    const delta: Record<string, { x: number; y: number }> = {
-      ArrowLeft: { x: -14, y: 0 },
-      ArrowRight: { x: 14, y: 0 },
-      ArrowUp: { x: 0, y: -14 },
-      ArrowDown: { x: 0, y: 14 },
-    };
-    const movement = delta[event.key];
-    if (movement) {
+    const { lat, lng, accuracy } = gps.position;
+    const layer = L.layerGroup().addTo(map);
+    gpsLayerRef.current = layer;
+    L.circle([lat, lng], {
+      radius: Math.max(1, accuracy),
+      color: "#1261a0",
+      fillColor: "#3496df",
+      fillOpacity: 0.15,
+      weight: 2,
+      interactive: false,
+    }).addTo(layer);
+    const icon = L.divIcon({
+      className: "aerial-current-icon",
+      html: '<span aria-hidden="true"></span>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      tooltipAnchor: [0, -13],
+    });
+    L.marker([lat, lng], {
+      icon,
+      title: "現在地",
+      keyboard: false,
+      zIndexOffset: 1000,
+    })
+      .bindTooltip(tooltipText("現在地"), {
+        direction: "top",
+        className: "aerial-place-label",
+      })
+      .addTo(layer);
+    if (!centeredGps.current) {
+      centeredGps.current = true;
+      map.setView([lat, lng], Math.max(16, map.getZoom()), { animate: false });
+      markPending(false);
+    }
+  }, [
+    visible,
+    ready,
+    gps?.status,
+    gps?.position?.lat,
+    gps?.position?.lng,
+    gps?.position?.accuracy,
+    gps?.position?.timestamp,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (gpsStartedHere.current) gpsRef.current?.stop();
+    },
+    [],
+  );
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (
+      !interactive ||
+      !ready ||
+      event.target !== event.currentTarget ||
+      !mapRef.current
+    )
+      return;
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      setPoint((current) => ({
-        x: clamp(current.x + movement.x, 42, WIDTH - 42),
-        y: clamp(current.y + movement.y, 50, HEIGHT - 44),
-      }));
-      setPending(true);
+      commitCenter();
+      return;
+    }
+    const movements: Record<string, [number, number]> = {
+      ArrowLeft: [-70, 0],
+      ArrowRight: [70, 0],
+      ArrowUp: [0, -70],
+      ArrowDown: [0, 70],
+    };
+    if (movements[event.key]) {
+      event.preventDefault();
+      mapRef.current.panBy(movements[event.key], { animate: false });
+      markPending(true);
     }
   }
 
+  function hideMap() {
+    gpsStartedHere.current = false;
+    gpsRef.current?.stop();
+    setVisible(false);
+    setReady(false);
+    setLoadingTiles(false);
+    markPending(false);
+  }
+
+  function startGps() {
+    gpsStartedHere.current = true;
+    centeredGps.current = false;
+    gpsRef.current?.start();
+  }
+
+  function stopGps() {
+    gpsStartedHere.current = false;
+    gpsRef.current?.stop();
+  }
+
+  function recenterGps() {
+    const position = gpsRef.current?.position;
+    if (!position || !mapRef.current) return;
+    mapRef.current.setView(
+      [position.lat, position.lng],
+      Math.max(16, mapRef.current.getZoom()),
+      { animate: false },
+    );
+    markPending(false);
+  }
+
+  const tracking = gps?.status === "requesting" || gps?.status === "active";
+  const hasPosition = gps?.status === "active" && Boolean(gps.position);
   const mapLabel = interactive
-    ? "自宅を選ぶサンプル地図。地図を押すか、矢印キーで位置を動かし、エンターキーで選んでください。"
-    : "自宅と目的地の位置関係を示したサンプル地図。実際の道路や運行経路とは異なります。";
-  const destinationLabel = destination?.name ?? "目的地";
+    ? "自宅を選ぶ航空写真地図"
+    : "自宅と目的地を確認する航空写真地図";
 
   return (
-    <div
-      className={`area-map${compact ? " area-map--compact" : ""}`}
-      style={{ width: "100%" }}
+    <section
+      className={`area-map area-map--aerial${compact ? " area-map--compact" : ""}`}
+      aria-label="航空写真と現在地"
     >
-      <div
-        className="map-canvas"
-        role={interactive ? "group" : undefined}
-        tabIndex={interactive ? 0 : undefined}
-        aria-label={interactive ? mapLabel : undefined}
-        aria-describedby={interactive ? `${mapId}-hint` : undefined}
-        onClick={interactive ? handleClick : undefined}
-        onKeyDown={interactive ? handleKeyDown : undefined}
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          borderRadius: 20,
-          background: "#e9eee1",
-          cursor: interactive ? "crosshair" : "default",
-          lineHeight: 0,
-          isolation: "isolate",
-        }}
-      >
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-labelledby={`${mapId}-title ${mapId}-description`}
-          style={{
-            display: "block",
-            width: "100%",
-            height: "auto",
-            minHeight: compact ? 190 : 220,
-            maxHeight: compact ? 320 : undefined,
-          }}
-        >
-          <title id={`${mapId}-title`}>中津のおでかけ サンプル地図</title>
-          <desc id={`${mapId}-description`}>
-            {mapLabel} 地理情報・道路・施設の配置は説明用の模式図です。
-          </desc>
-          <defs>
-            <pattern
-              id={`${mapId}-grid`}
-              width="42"
-              height="42"
-              patternUnits="userSpaceOnUse"
-            >
-              <rect width="42" height="42" fill="#ecede4" />
-              <rect x="6" y="7" width="25" height="21" rx="4" fill="#e3e5da" />
-            </pattern>
-            <filter
-              id={`${mapId}-shadow`}
-              x="-100%"
-              y="-100%"
-              width="300%"
-              height="300%"
-            >
-              <feDropShadow
-                dx="0"
-                dy="4"
-                stdDeviation="5"
-                floodColor="#234837"
-                floodOpacity=".18"
-              />
-            </filter>
-          </defs>
-          <rect width={WIDTH} height={HEIGHT} fill={`url(#${mapId}-grid)`} />
-          <path d="M0 0H170L161 64L93 100L0 84Z" fill="#d7e2ca" />
-          <path d="M0 298L90 274L148 310L139 430H0Z" fill="#dce5cc" />
-          <path d="M448 0H543L574 74L519 111L447 78Z" fill="#d6e1c9" />
-          <path
-            d="M605 -30C569 40 616 85 602 142S558 224 609 279S666 352 622 460"
-            fill="none"
-            stroke="#b9d9de"
-            strokeWidth="64"
-          />
-          <path
-            d="M605 -30C569 40 616 85 602 142S558 224 609 279S666 352 622 460"
-            fill="none"
-            stroke="#c7e3e7"
-            strokeWidth="43"
-          />
-          <g
-            fill="none"
-            stroke="#fdfcf7"
-            strokeWidth="13"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M-25 172L174 165L339 191L516 174L785 178" />
-            <path d="M109 -20L134 112L126 242L159 450" />
-            <path d="M307 -10L297 117L315 241L293 450" />
-            <path d="M493 -20L480 112L493 260L530 450" />
-            <path d="M-20 333L209 319L390 333L578 319L790 352" />
-            <path d="M-15 70L222 86L419 67L565 74L789 64" />
-            <path d="M209 -20L221 103L205 234L226 450" strokeWidth="7" />
-            <path d="M399 -20L417 108L402 258L409 450" strokeWidth="7" />
-            <path d="M-10 251L221 239L405 259L566 249" strokeWidth="7" />
-          </g>
-          <path
-            d="M-10 398L211 383L400 399L778 388"
-            fill="none"
-            stroke="#c3c7bb"
-            strokeWidth="8"
-          />
-          <path
-            d="M-10 398L211 383L400 399L778 388"
-            fill="none"
-            stroke="#f7f6ef"
-            strokeWidth="3"
-            strokeDasharray="6 7"
-          />
-          <path
-            d="M560 174H650M580 319L668 331"
-            fill="none"
-            stroke="#d6dbd0"
-            strokeWidth="19"
-          />
-          <path
-            d="M560 174H650M580 319L668 331"
-            fill="none"
-            stroke="#fdfcf7"
-            strokeWidth="12"
-          />
-          <g fill="#d6dfc6">
-            <rect x="334" y="98" width="58" height="58" rx="15" />
-            <rect x="29" y="190" width="68" height="45" rx="10" />
-            <rect x="340" y="280" width="39" height="27" rx="6" />
-          </g>
-          <g fill="#dddccf" stroke="#d1d2c6" strokeWidth="1">
-            <rect x="158" y="113" width="35" height="29" rx="4" />
-            <rect x="239" y="110" width="34" height="31" rx="4" />
-            <rect x="337" y="213" width="38" height="22" rx="4" />
-            <rect x="153" y="263" width="35" height="34" rx="4" />
-            <rect x="241" y="263" width="32" height="30" rx="4" />
-            <rect x="431" y="194" width="35" height="36" rx="4" />
-            <rect x="431" y="284" width="34" height="30" rx="4" />
-          </g>
-          <Tree x={41} y={39} size={1.1} />
-          <Tree x={70} y={48} />
-          <Tree x={99} y={32} size={1.2} />
-          <Tree x={355} y={120} />
-          <Tree x={374} y={138} size={0.8} />
-          <Tree x={472} y={32} />
-          <Tree x={509} y={49} size={1.2} />
-          <Tree x={42} y={320} />
-          <Tree x={66} y={350} size={1.1} />
-          <Tree x={35} y={379} size={0.8} />
-          <Tree x={699} y={252} />
-          <Tree x={722} y={271} size={0.85} />
-          <g fontFamily="inherit" fill="#7d8577" fontSize="12" fontWeight="500">
-            <text x="51" y="115">
-              中津のまち
-            </text>
-            <text x="340" y="88">
-              公園
-            </text>
-            <text x="660" y="111" fill="#7b9fa5">
-              川
-            </text>
-            <text x="169" y="220">
-              住宅地
-            </text>
-          </g>
-          <g transform="translate(364 365)">
-            <rect
-              x="-25"
-              y="-10"
-              width="94"
-              height="31"
-              rx="7"
-              fill="#fdfcf7"
-              stroke="#d4d7ca"
-            />
-            <rect x="-13" y="-3" width="15" height="15" rx="3" fill="#648875" />
-            <path d="M-9 1h7M-9 5h7" stroke="#fff" strokeWidth="1.7" />
-            <text
-              x="13"
-              y="11"
-              fontFamily="inherit"
-              fontSize="13"
-              fontWeight="600"
-              fill="#5c7163"
-            >
-              中津駅
-            </text>
-          </g>
-          <BusStop
-            x={299}
-            y={178}
-            label={mode === "journey" ? "乗りかえ" : undefined}
-          />
-          <BusStop x={489} y={251} />
-          <BusStop x={130} y={326} />
-          {mode === "journey" && (
-            <g>
+      {!visible ? (
+        <div className="aerial-consent">
+          <div className="aerial-consent-icon" aria-hidden="true">
+            <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
               <path
-                d={`M${point.x} ${point.y}L${point.x} 249L299 249L299 178L${destinationPoint.x} 178L${destinationPoint.x} ${destinationPoint.y}`}
-                fill="none"
-                stroke="#fff"
-                strokeWidth="12"
+                d="m4 10 10-4 10 4 10-4v25l-10 4-10-4-10 4Z"
+                stroke="currentColor"
+                strokeWidth="2"
                 strokeLinejoin="round"
-                strokeLinecap="round"
               />
               <path
-                d={`M${point.x} ${point.y}L${point.x} 249L299 249L299 178`}
-                fill="none"
-                stroke="#d99c55"
-                strokeWidth="6"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                strokeDasharray="8 9"
-              />
-              <path
-                d={`M299 178L${destinationPoint.x} 178L${destinationPoint.x} ${destinationPoint.y}`}
-                fill="none"
-                stroke="#36765b"
-                strokeWidth="6"
-                strokeLinejoin="round"
-                strokeLinecap="round"
+                d="M14 6v25M24 10v25"
+                stroke="currentColor"
+                strokeWidth="2"
               />
               <circle
-                cx="299"
-                cy="178"
-                r="8"
-                fill="#fff"
-                stroke="#36765b"
-                strokeWidth="4"
+                cx="24"
+                cy="13"
+                r="6"
+                fill="#eff6f2"
+                stroke="currentColor"
+                strokeWidth="2"
               />
-              <g
-                transform={`translate(${destinationPoint.x} ${destinationPoint.y})`}
-                filter={`url(#${mapId}-shadow)`}
-              >
-                <circle r="19" fill="#fff" />
-                <path
-                  d="M0 12S-9 2-9-4a9 9 0 0 1 18 0C9 2 0 12 0 12Z"
-                  fill="#36765b"
-                />
-                <circle cy="-4" r="3" fill="#fff" />
-              </g>
-              <g
-                transform={`translate(${clamp(destinationPoint.x, 100, 660)} ${destinationPoint.y + 35})`}
-              >
-                <rect
-                  x="-93"
-                  y="-12"
-                  width="186"
-                  height="27"
-                  rx="13.5"
-                  fill="#fff"
-                  fillOpacity=".96"
-                />
-                <text
-                  textAnchor="middle"
-                  y="6"
-                  fontFamily="inherit"
-                  fontSize="13"
-                  fontWeight="700"
-                  fill="#365e49"
-                >
-                  {destinationLabel.length > 13
-                    ? `${destinationLabel.slice(0, 12)}…`
-                    : destinationLabel}
-                </text>
-              </g>
-            </g>
+              <path
+                d="m28 17 5 5"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <h3>航空写真で場所を確かめる</h3>
+          <p>
+            国土地理院の航空写真を表示します。開くと、表示範囲と接続元の IP
+            アドレスが国土地理院へ送信されます。
+          </p>
+          <p>ご自宅・現在地を、ほかの利用者に共有することはありません。</p>
+          <button
+            type="button"
+            className="aerial-button aerial-button--primary"
+            onClick={() => setVisible(true)}
+          >
+            航空写真を表示
+          </button>
+          {tracking && (
+            <button type="button" className="aerial-button" onClick={stopGps}>
+              現在地の表示を停止
+            </button>
           )}
-          <g
-            transform={`translate(${point.x} ${point.y})`}
-            filter={`url(#${mapId}-shadow)`}
+        </div>
+      ) : (
+        <>
+          <div className="aerial-toolbar">
+            <strong>国土地理院の航空写真</strong>
+            <button
+              type="button"
+              className="aerial-button aerial-button--quiet"
+              onClick={hideMap}
+            >
+              航空写真を非表示
+            </button>
+          </div>
+          <div
+            className="map-canvas aerial-map-frame"
+            role="group"
+            tabIndex={0}
+            aria-label={mapLabel}
+            aria-describedby={`${id}-instructions`}
+            aria-busy={!ready && !initializationError}
+            onKeyDown={handleKeyDown}
           >
-            <circle r="29" fill="#fff" fillOpacity=".55" />
-            <circle
-              r="21"
-              fill={pending ? "#d7994c" : "#35694e"}
-              stroke="#fff"
-              strokeWidth="4"
-            />
-            <path
-              d="M-10 0L0-9L10 0M-7-2V9H7V-2M-2 9V3H2V9"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </g>
-          <g
-            transform={`translate(${clamp(point.x, 72, 688)} ${clamp(point.y + 42, 27, HEIGHT - 16)})`}
-          >
-            <rect
-              x="-58"
-              y="-13"
-              width="116"
-              height="27"
-              rx="13.5"
-              fill="#fff"
-            />
-            <text
-              y="5"
-              textAnchor="middle"
-              fontFamily="inherit"
-              fontSize="13"
-              fontWeight="700"
-              fill="#365e49"
+            <div ref={containerRef} className="aerial-leaflet" />
+            {interactive && ready && (
+              <div className="aerial-center" aria-hidden="true">
+                <span />
+                <span />
+              </div>
+            )}
+            {!ready && !initializationError && (
+              <div className="aerial-loading" role="status">
+                地図を準備しています…
+              </div>
+            )}
+          </div>
+          <div className="aerial-status" aria-live="polite">
+            {initializationError || tileError ? (
+              <div className="aerial-error">
+                <p>
+                  {initializationError
+                    ? "地図を準備できませんでした。通信状況をご確認ください。"
+                    : "航空写真を読み込めませんでした。一部の写真が表示されないことがあります。通信状況をご確認ください。"}
+                </p>
+                <button
+                  type="button"
+                  className="aerial-button"
+                  onClick={() => {
+                    setAttempt((value) => value + 1);
+                  }}
+                >
+                  航空写真を再読み込み
+                </button>
+              </div>
+            ) : loadingTiles ? (
+              <p>航空写真を読み込んでいます…</p>
+            ) : null}
+            {interactive && pending && (
+              <p>
+                中心の十字を自宅に合わせ、Enter
+                または下のボタンで決定してください。
+              </p>
+            )}
+          </div>
+          {interactive && (
+            <button
+              type="button"
+              className="aerial-button aerial-center-button"
+              disabled={!ready || !pending}
+              onClick={commitCenter}
             >
-              {pending ? "Enterで決定" : "ご自宅"}
-            </text>
-          </g>
-          <g transform="translate(654 23)">
-            <rect
-              width="88"
-              height="26"
-              rx="13"
-              fill="#fff"
-              fillOpacity=".94"
-            />
-            <text
-              x="44"
-              y="17"
-              textAnchor="middle"
-              fontFamily="inherit"
-              fontSize="11"
-              fontWeight="600"
-              fill="#6e786a"
-            >
-              サンプル地図
-            </text>
-          </g>
-          <g transform="translate(29 27)" fill="#6f7e6a">
-            <path d="M0 23L7 2L14 23L7 19Z" fill="#8e9e83" />
-            <text
-              x="7"
-              y="-3"
-              textAnchor="middle"
-              fontFamily="inherit"
-              fontSize="10"
-            >
-              N
-            </text>
-          </g>
-        </svg>
-      </div>
-      <p
-        id={`${mapId}-hint`}
-        style={{
-          margin: "10px 2px 0",
-          color: "#586650",
-          fontSize: 12,
-          lineHeight: 1.7,
-        }}
-      >
+              地図の中心を自宅に設定
+            </button>
+          )}
+          {gps && (
+            <div className="aerial-gps">
+              <div className="aerial-gps-heading">
+                <strong>現在地</strong>
+                <span>
+                  {gps.status === "requesting"
+                    ? "確認しています…"
+                    : hasPosition
+                      ? "この端末に表示中"
+                      : "自分で開始できます"}
+                </span>
+              </div>
+              <p>
+                現在地の取得は、ボタンを押して許可したときだけ始まります。現在地を自動で自宅として保存することはありません。
+              </p>
+              <div className="aerial-gps-actions">
+                {!tracking && (
+                  <button
+                    type="button"
+                    className="aerial-button"
+                    disabled={!ready}
+                    onClick={startGps}
+                  >
+                    現在地を表示
+                  </button>
+                )}
+                {tracking && (
+                  <button
+                    type="button"
+                    className="aerial-button"
+                    onClick={stopGps}
+                  >
+                    現在地の表示を停止
+                  </button>
+                )}
+                {hasPosition && (
+                  <button
+                    type="button"
+                    className="aerial-button"
+                    onClick={recenterGps}
+                  >
+                    現在地に戻る
+                  </button>
+                )}
+                {hasPosition && onUseCurrentLocation && (
+                  <button
+                    type="button"
+                    className="aerial-button aerial-button--primary"
+                    onClick={() => {
+                      const position = gpsRef.current?.position;
+                      if (position)
+                        onUseCurrentLocation({
+                          lat: position.lat,
+                          lng: position.lng,
+                          label: "現在地のご自宅",
+                        });
+                    }}
+                  >
+                    現在地を自宅に設定
+                  </button>
+                )}
+              </div>
+              <div className="aerial-gps-message" aria-live="polite">
+                {gps.error && <p className="aerial-gps-error">{gps.error}</p>}
+                {hasPosition && (
+                  <p>
+                    青い点が現在地、青い円が位置の精度の目安です（約{" "}
+                    {Math.ceil(gps.position!.accuracy).toLocaleString()} m）。
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      <p className="aerial-instructions" id={`${id}-instructions`}>
         {interactive
-          ? "地図を押して自宅を選べます。矢印キーで移動、Enterで決定。"
-          : "道路・施設の位置や経路は説明用の参考表示です。"}
-        {interactive && "実際の位置とは異なる参考地図です。"}
+          ? "表示した地図を押すと自宅を選べます。地図にフォーカスして矢印キーで移動、Enter で中心を選べます。"
+          : "緑の目印がご自宅、茶色の目印が目的地です。"}
+        {mode === "journey" &&
+          "表示している経路案内はサンプルです。航空写真上に実際の運行経路は表示していません。"}
       </p>
-      <span
-        aria-live="polite"
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: "hidden",
-          clipPath: "inset(50%)",
-          whiteSpace: "nowrap",
-          border: 0,
-        }}
-      >
-        {pending ? "位置を移動しました。エンターキーで決定してください。" : ""}
-      </span>
-    </div>
+      <div className="aerial-attribution">
+        <a
+          href="https://maps.gsi.go.jp/development/ichiran.html#seamlessphoto"
+          target="_blank"
+          rel="noopener noreferrer"
+          referrerPolicy="no-referrer"
+        >
+          出典：国土地理院
+        </a>
+        <a
+          href="https://cyberjapandata.gsi.go.jp/legend/seamlessphoto_precaution.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          referrerPolicy="no-referrer"
+        >
+          航空写真のご利用上の注意
+        </a>
+      </div>
+    </section>
   );
 }

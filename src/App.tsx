@@ -38,6 +38,7 @@ import {
   X,
 } from "lucide-react";
 import AreaMap from "./components/AreaMap";
+import useGeolocation from "./hooks/useGeolocation";
 import {
   DESTINATIONS,
   HOME_AREAS,
@@ -206,6 +207,7 @@ function BusIllustration() {
 }
 
 export default function App() {
+  const gps = useGeolocation();
   const [view, setView] = useState<View>("search");
   const [profile, setProfile] = useState<Profile | null>(loadProfile);
   const [trips, setTrips] = useState<SavedTrip[]>(loadTrips);
@@ -230,6 +232,9 @@ export default function App() {
   const [guideStep, setGuideStep] = useState<number | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const destinationSelectRef = useRef<HTMLSelectElement>(null);
+
+  // A new screen or a closed registration dialog must not keep tracking.
+  useEffect(() => () => gps.stop(), [view, modal, gps.stop]);
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
@@ -632,7 +637,11 @@ export default function App() {
                   </div>
                   {profile && <CheckCircle2 className="home-saved" size={21} />}
                 </div>
-                <AreaMap selected={profile?.home ?? HOME_AREAS[0]} compact />
+                <AreaMap
+                  selected={profile?.home ?? HOME_AREAS[0]}
+                  gps={gps}
+                  compact
+                />
                 <div className="home-card-bottom">
                   <p>
                     <MapPin size={16} />
@@ -927,10 +936,11 @@ export default function App() {
                     mode="journey"
                     selected={journeyProfile?.home}
                     destination={selectedJourney.destination}
+                    gps={gps}
                   />
                   <p>
                     <Info size={16} />
-                    道順のイメージです。実際の地図・運行経路ではありません。
+                    航空写真は実地図です。バスの経路・時刻はサンプルで、道路に沿った道案内は行いません。
                   </p>
                 </div>
                 {selectedIsSaved ? (
@@ -948,18 +958,18 @@ export default function App() {
                       className="primary-button"
                       onClick={() => {
                         setGuideStep(0);
-                        document
-                          .getElementById("guidance")
-                          ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "center",
-                          });
+                        document.getElementById("guidance")?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "center",
+                        });
                       }}
                     >
                       乗り換え案内をはじめる
                       <ArrowRight size={19} />
                     </button>
-                    <small>体験版では現在位置の追跡は行いません。</small>
+                    <small>
+                      現在地は地図のGPSボタンから確認できます。案内の手順はサンプルです。
+                    </small>
                   </div>
                 ) : (
                   <div className="card action-card">
@@ -1219,7 +1229,7 @@ export default function App() {
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  このアプリは操作を試すための体験版です。実際の時刻表や予約システムとは連携していません。表示される時刻・運賃・経路・地図はサンプルです。実際のご利用は中津市や交通事業者の公式案内をご確認ください。
+                  バスの時刻・運賃・経路はサンプルで、実際の時刻表や予約システムとは連携していません。航空写真は国土地理院の実地図ですが、撮影時点のものであり、現在の道路状況や運行を保証するものではありません。実際のご利用は中津市や交通事業者の公式案内をご確認ください。
                 </p>
               </details>
               <details>
@@ -1228,7 +1238,16 @@ export default function App() {
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  お名前、ご自宅の場所、おでかけ予定は、このブラウザ内だけに保存します。サーバーへの送信やアカウントの作成は行いません。ブラウザのデータを消すと登録も削除され、別の端末とは共有されません。共用端末では利用後に登録情報を削除してください。
+                  お名前、ご自宅の場所、おでかけ予定は、このブラウザ内だけに保存し、アプリのサーバーや他の利用者には共有しません。GPSの現在地は履歴として保存せず、停止や画面を離れたときに消します。「現在地を自宅に設定」して登録を確定した場合だけ、その場所をご自宅として保存します。航空写真の表示時には、表示範囲の画像リクエストとIPアドレスが国土地理院へ送信されます。共用端末では利用後に登録情報を削除してください。
+                </p>
+              </details>
+              <details>
+                <summary>
+                  GPSで現在地が表示されないときは？
+                  <ChevronDown size={19} />
+                </summary>
+                <p>
+                  「現在地を表示」を押し、ブラウザで位置情報の利用を許可してください。HTTPSで開いたページと位置情報に対応した端末が必要です。拒否した場合はブラウザのサイト設定から許可を変更できます。屋内や端末の設定によって位置がずれる場合があります。GPSの停止ボタンで取得を止められます。
                 </p>
               </details>
               <details>
@@ -1246,7 +1265,7 @@ export default function App() {
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  画面を開いた後の経路検索と予定の保存は、外部サービスへの接続なしで動作します。オフラインでの再読み込みや本当の運行情報には対応していません。
+                  画面を開いた後のサンプル経路検索と予定の保存は、外部サービスへの接続なしで動作します。航空写真の読み込みにはインターネット接続が必要です。オフラインでの再読み込みや本当の運行情報には対応していません。
                 </p>
               </details>
             </section>
@@ -1377,6 +1396,11 @@ export default function App() {
               <AreaMap
                 mode="home"
                 selected={homeDraft}
+                gps={gps}
+                onUseCurrentLocation={(location) => {
+                  setHomeDraft({ ...location, id: "gps" });
+                  setHomeLabel("現在地から設定したご自宅");
+                }}
                 onSelect={(location) => {
                   setHomeDraft({ ...location, id: "custom" });
                   if (
@@ -1387,8 +1411,8 @@ export default function App() {
                 }}
               />
               <p className="form-hint">
-                地図上を押して、ご自宅の位置を選べます。キーボードでは矢印キーと
-                Enter キーで設定できます。
+                航空写真を表示してから、ご自宅の位置を押して選べます。キーボードでは矢印キーで地図を動かし、Enter
+                キーで中心を設定できます。GPSの現在地も、確認してからご自宅に設定できます。
               </p>
             </fieldset>
             <div className="input-group">
@@ -1523,6 +1547,7 @@ export default function App() {
             <button
               className="danger-button"
               onClick={() => {
+                gps.stop();
                 if (!clearUserData()) {
                   setModalError(
                     "削除できませんでした。ブラウザの保存設定をご確認ください。",

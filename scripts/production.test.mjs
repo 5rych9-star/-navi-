@@ -63,9 +63,23 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
       const context = await browser.newContext({
         locale: "ja-JP",
         timezoneId: "Asia/Tokyo",
+        permissions: ["geolocation"],
+        geolocation: { latitude: 33.58642, longitude: 131.19876, accuracy: 12 },
       });
       try {
         const page = await context.newPage();
+        let tileRequests = 0;
+        await page.route(
+          "https://maps.gsi.go.jp/xyz/seamlessphoto/**",
+          async (route) => {
+            tileRequests += 1;
+            await route.fulfill({
+              contentType: "image/svg+xml",
+              body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#d5ded0"/></svg>',
+              headers: { "access-control-allow-origin": "*" },
+            });
+          },
+        );
         const errors = [];
         const failedAssets = [];
         page.on("pageerror", (error) => errors.push(error.message));
@@ -93,6 +107,31 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
         await page
           .getByRole("heading", { name: "どこへおでかけしますか？" })
           .waitFor({ timeout: 5000 });
+        assert.equal(tileRequests, 0, "航空写真は明示操作まで読み込まないこと");
+        // Exercise the lazy Leaflet chunk from the deployed subdirectory too.
+        // This is a fixture tile and simulated GPS, not a live GSI/device check.
+        await page
+          .getByRole("button", { name: "航空写真を表示", exact: true })
+          .click();
+        await page.locator(".leaflet-tile-loaded").first().waitFor();
+        assert.ok(tileRequests > 0);
+        await page
+          .getByRole("button", { name: "現在地を表示", exact: true })
+          .click();
+        await page
+          .getByRole("button", { name: "現在地に戻る", exact: true })
+          .waitFor();
+        assert.equal(await page.locator(".aerial-current-icon").count(), 1);
+        await page
+          .getByRole("button", { name: "現在地の表示を停止", exact: true })
+          .click();
+        await page
+          .locator(".aerial-current-icon")
+          .waitFor({ state: "detached" });
+        assert.equal(await page.evaluate(() => localStorage.length), 0);
+        await page
+          .getByRole("button", { name: "航空写真を非表示", exact: true })
+          .click();
 
         await page
           .getByRole("button", { name: "ご自宅を登録する", exact: true })

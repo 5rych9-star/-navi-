@@ -1,6 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+// Map interaction tests use a deterministic fixture, not actual aerial imagery.
+async function fixtureAerialTiles(page: Page) {
+  await page.route("https://maps.gsi.go.jp/xyz/seamlessphoto/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#d5ded0"/></svg>',
+    }),
+  );
+}
+
 async function registerHome(page: Page, nickname = "なかつ花子") {
   await page
     .getByRole("button", { name: "ご自宅を登録する", exact: true })
@@ -151,6 +162,7 @@ test("未登録時は自宅登録を案内し、運行前の時刻には経路�
 });
 
 test("地図をキーボードで設定し、登録情報だけを削除できる", async ({ page }) => {
+  await fixtureAerialTiles(page);
   await page.goto("/");
   await page.evaluate(() =>
     localStorage.setItem("unrelated-app-setting", "keep"),
@@ -160,14 +172,17 @@ test("地図をキーボードで設定し、登録情報だけを削除でき�
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("お名前（ニックネーム）").fill("地図の利用者");
+  await dialog
+    .getByRole("button", { name: "航空写真を表示", exact: true })
+    .click();
   const map = dialog.getByRole("group", {
-    name: "自宅を選ぶサンプル地図",
+    name: "自宅を選ぶ航空写真地図",
     exact: false,
   });
   await map.focus();
   await map.press("ArrowLeft");
   await map.press("ArrowUp");
-  await expect(map).toContainText("Enterで決定");
+  await expect(dialog.getByText(/中心の十字を自宅に合わせ/)).toBeVisible();
   await map.press("Enter");
   await expect(dialog.getByLabel("場所の呼び名（任意）")).toHaveValue(
     "地図で選んだご自宅",
@@ -298,6 +313,7 @@ test("主要画面と登録・申込ダイアログにWCAGの自動検出違反�
 test("地域を選んだ直後に地図でEnterを押しても自宅の座標を変更しない", async ({
   page,
 }) => {
+  await fixtureAerialTiles(page);
   await page.goto("/");
   await page
     .getByRole("button", { name: "ご自宅を登録する", exact: true })
@@ -307,8 +323,11 @@ test("地域を選んだ直後に地図でEnterを押しても自宅の座標を
   const area = dialog.getByRole("button", { name: "大貞周辺", exact: true });
   await area.click();
   await expect(area).toHaveAttribute("aria-pressed", "true");
+  await dialog
+    .getByRole("button", { name: "航空写真を表示", exact: true })
+    .click();
   const map = dialog.getByRole("group", {
-    name: "自宅を選ぶサンプル地図",
+    name: "自宅を選ぶ航空写真地図",
     exact: false,
   });
   await map.focus();
