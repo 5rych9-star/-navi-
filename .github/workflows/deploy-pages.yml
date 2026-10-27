@@ -40,6 +40,9 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Verify responsive date and time fields
+        run: npx playwright test e2e/layout.spec.ts
+
       - name: Verify login and account isolation with HTTP fixtures
         run: npm run test:auth
 

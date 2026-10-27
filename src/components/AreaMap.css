@@ -2,7 +2,7 @@
   width: 100%;
   min-width: 0;
   color: #334e44;
-  background: #f5f8f5;
+  background: #f6f7f1;
   font-family: inherit;
   font-size: 14px;
   line-height: 1.7;
@@ -10,13 +10,14 @@
 }
 
 .area-map--aerial .aerial-consent {
-  padding: 24px 20px;
+  padding: 28px 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
-  background: linear-gradient(135deg, #eef5ef, #f8faf6);
+  gap: 14px;
+  background: linear-gradient(145deg, #edf2e8, #faf9f2 78%);
+  border-bottom: 1px solid #dfe5d8;
 }
 
 .area-map--aerial .aerial-consent-icon {
@@ -24,9 +25,11 @@
   height: 64px;
   display: grid;
   place-items: center;
-  color: #2b6b55;
-  border-radius: 18px;
-  background: #e0ece1;
+  color: #246b55;
+  border: 1px solid #d3e0cd;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #f8faf2, #e1ecd9);
+  box-shadow: 0 6px 16px #35563e0b, inset 0 1px 0 #fff;
 }
 
 .area-map--aerial .aerial-consent h3 {
@@ -47,9 +50,9 @@
   min-height: 44px;
   min-width: 44px;
   padding: 9px 14px;
-  border: 1px solid #9eafa2;
-  border-radius: 9px;
-  background: #fff;
+  border: 1px solid #b6c6b5;
+  border-radius: 12px;
+  background: #fffefb;
   color: #2a5945;
   font: inherit;
   font-size: 13px;
@@ -58,17 +61,20 @@
   cursor: pointer;
   white-space: normal;
   overflow-wrap: anywhere;
+  box-shadow: 0 2px 4px #244a3505;
 }
 
 .area-map--aerial .aerial-button:hover:not(:disabled) {
-  background: #eaf3ec;
+  background: #edf3e8;
   border-color: #32674e;
+  box-shadow: 0 3px 8px #244a350d;
 }
 
 .area-map--aerial .aerial-button--primary {
-  background: #28694f;
-  border-color: #28694f;
+  background: linear-gradient(145deg, #2e795f, #246b55);
+  border-color: #246b55;
   color: #fff;
+  box-shadow: 0 4px 10px #24583e1a;
 }
 
 .area-map--aerial .aerial-button--primary:hover:not(:disabled) {
@@ -82,6 +88,7 @@
   border-color: #cad3c9;
   background: #edf0eb;
   cursor: default;
+  box-shadow: none;
 }
 
 .area-map--aerial .aerial-button:focus-visible,
@@ -95,8 +102,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  background: #f4f7f1;
+  padding: 12px 14px;
+  background: #f7f7f0;
 }
 
 .area-map--aerial .aerial-toolbar strong {
@@ -105,10 +112,10 @@
 }
 
 .area-map--aerial .aerial-view-tools {
-  padding: 12px;
-  border-top: 1px solid #d8e2d6;
-  border-bottom: 1px solid #d8e2d6;
-  background: #f7faf4;
+  padding: 14px;
+  border-top: 1px solid #dfe5d8;
+  border-bottom: 1px solid #dfe5d8;
+  background: #fafaf5;
 }
 
 .area-map--aerial .aerial-region-controls,
@@ -189,7 +196,7 @@
   min-height: 44px;
   line-height: 44px;
   color: #284d3b;
-  background: #fff;
+  background: #fffefb;
   font-size: 24px;
 }
 
@@ -298,7 +305,7 @@
   margin: 12px 0;
   padding: 12px;
   border: 1px solid #dfbbab;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fff5ed;
   color: #824730;
 }
@@ -314,11 +321,12 @@
 }
 
 .area-map--aerial .aerial-gps {
-  margin: 12px;
-  padding: 14px;
-  border: 1px solid #ceddce;
-  border-radius: 10px;
-  background: #fff;
+  margin: 14px;
+  padding: 16px;
+  border: 1px solid #dce4d6;
+  border-radius: 16px;
+  background: #fffefb;
+  box-shadow: 0 4px 12px #294e3706;
 }
 
 .area-map--aerial .aerial-gps-heading {
@@ -366,7 +374,7 @@
   align-items: center;
   gap: 0 14px;
   padding: 0 14px 6px;
-  background: #f5f8f5;
+  background: #f6f7f1;
 }
 
 .area-map--aerial .aerial-attribution a {

@@ -133,71 +133,108 @@ function Modal({
 
 function BusIllustration() {
   return (
-    <svg className="hero-illustration" viewBox="0 0 430 225" aria-hidden="true">
+    <svg className="hero-illustration" viewBox="0 0 430 260" aria-hidden="true">
+      <defs>
+        <linearGradient id="landscape-sky" x2="0" y2="1">
+          <stop stopColor="#e6efe7" />
+          <stop offset="1" stopColor="#f7f5e9" />
+        </linearGradient>
+        <linearGradient id="landscape-bus" x2="0" y2="1">
+          <stop stopColor="#32816a" />
+          <stop offset="1" stopColor="#215c49" />
+        </linearGradient>
+      </defs>
       <path
-        d="M96 173C52 101 98 28 177 22c68-8 124 14 157 69 28 47 6 94-45 101Z"
-        fill="#e5eddd"
+        d="M25 214V116C25 58 97 20 206 20s199 42 199 116v78Z"
+        fill="url(#landscape-sky)"
       />
-      <circle cx="319" cy="47" r="20" fill="#f1d897" opacity=".9" />
+      <circle cx="321" cy="66" r="25" fill="#ecd39b" />
       <path
-        d="M29 194c73-18 259-20 373-1"
-        stroke="#b6c7ae"
-        strokeWidth="2"
-        fill="none"
-        strokeDasharray="5 7"
+        d="m25 160 72-75 56 50 65-71 96 95 42-47 49 48v54H25Z"
+        fill="#ceddca"
       />
       <path
-        d="M338 182v-66m0 21-17-13m17 30 18-18"
-        fill="none"
-        stroke="#8da988"
-        strokeWidth="4"
-        strokeLinecap="round"
+        d="M25 172c70-52 126-44 194-6 74-57 129-46 186 4v44H25Z"
+        fill="#adc6a4"
       />
-      <ellipse cx="339" cy="105" rx="28" ry="37" fill="#a9c6a1" />
-      <ellipse cx="324" cy="113" rx="18" ry="23" fill="#bed1b0" />
       <path
-        d="M70 172v-40m0 12-12-8"
-        stroke="#9cb294"
-        strokeWidth="3"
-        fill="none"
+        d="M25 191c74-29 141-23 198 8 77-31 127-28 182-11v26H25Z"
+        fill="#8eaf8c"
       />
-      <ellipse cx="71" cy="122" rx="18" ry="25" fill="#bbcfab" />
-      <ellipse cx="209" cy="189" rx="105" ry="9" fill="#cdd8c6" />
-      <rect x="108" y="85" width="200" height="94" rx="19" fill="#247b63" />
       <path
-        d="M130 68h151c16 0 27 10 27 27v32H108V91c0-14 8-23 22-23"
-        fill="#fdfbf0"
-        stroke="#247b63"
-        strokeWidth="3"
-      />
-      <rect x="123" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
-      <rect x="169" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
-      <rect x="215" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
-      <path d="M263 83h25c4 0 7 3 7 7v65h-32Z" fill="#cce3d8" />
-      <path d="M279 85v68" stroke="#f5f5df" strokeWidth="3" />
-      <path
-        d="M132 86l12 1-17 28h-3Zm47 0h10l-17 28h-2Zm46 0h10l-17 28h-2Z"
-        fill="#eaf3e9"
-      />
-      <rect x="118" y="137" width="132" height="4" rx="2" fill="#c2d4b8" />
-      <rect x="108" y="163" width="201" height="8" rx="4" fill="#e8e8cc" />
-      <circle cx="148" cy="177" r="17" fill="#394d45" />
-      <circle cx="148" cy="177" r="8" fill="#f4f2e8" />
-      <circle cx="269" cy="177" r="17" fill="#394d45" />
-      <circle cx="269" cy="177" r="8" fill="#f4f2e8" />
-      <rect x="184" y="71" width="50" height="6" rx="3" fill="#8ea88a" />
-      <path
-        d="M104 129v14m205-16v13"
-        stroke="#f4d599"
-        strokeWidth="5"
+        d="M12 216c111-12 284-12 407 0"
+        stroke="#fdfaf1"
+        strokeWidth="24"
         strokeLinecap="round"
       />
       <path
-        d="m370 73 3-10m-9 4 10 2M49 66l3-10m-9 4 10 2"
-        stroke="#9eb59b"
-        strokeWidth="2"
-        strokeLinecap="round"
+        d="M19 216c112-11 278-11 392 0"
+        stroke="#b4b9a3"
+        strokeWidth="1.5"
+        strokeDasharray="4 8"
+        fill="none"
       />
+      <g transform="translate(0 22)">
+        <path
+          d="M338 182v-66m0 21-17-13m17 30 18-18"
+          fill="none"
+          stroke="#8da988"
+          strokeWidth="4"
+          strokeLinecap="round"
+        />
+        <ellipse cx="339" cy="105" rx="28" ry="37" fill="#a9c6a1" />
+        <ellipse cx="324" cy="113" rx="18" ry="23" fill="#bed1b0" />
+        <path
+          d="M70 172v-40m0 12-12-8"
+          stroke="#9cb294"
+          strokeWidth="3"
+          fill="none"
+        />
+        <ellipse cx="71" cy="122" rx="18" ry="25" fill="#bbcfab" />
+        <ellipse cx="209" cy="189" rx="105" ry="9" fill="#cdd8c6" />
+        <rect
+          x="108"
+          y="85"
+          width="200"
+          height="94"
+          rx="19"
+          fill="url(#landscape-bus)"
+        />
+        <path
+          d="M130 68h151c16 0 27 10 27 27v32H108V91c0-14 8-23 22-23"
+          fill="#fdfbf0"
+          stroke="#247b63"
+          strokeWidth="3"
+        />
+        <rect x="123" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
+        <rect x="169" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
+        <rect x="215" y="83" width="37" height="38" rx="5" fill="#cce3d8" />
+        <path d="M263 83h25c4 0 7 3 7 7v65h-32Z" fill="#cce3d8" />
+        <path d="M279 85v68" stroke="#f5f5df" strokeWidth="3" />
+        <path
+          d="M132 86l12 1-17 28h-3Zm47 0h10l-17 28h-2Zm46 0h10l-17 28h-2Z"
+          fill="#eaf3e9"
+        />
+        <rect x="118" y="137" width="132" height="4" rx="2" fill="#c2d4b8" />
+        <rect x="108" y="163" width="201" height="8" rx="4" fill="#e8e8cc" />
+        <circle cx="148" cy="177" r="17" fill="#394d45" />
+        <circle cx="148" cy="177" r="8" fill="#f4f2e8" />
+        <circle cx="269" cy="177" r="17" fill="#394d45" />
+        <circle cx="269" cy="177" r="8" fill="#f4f2e8" />
+        <rect x="184" y="71" width="50" height="6" rx="3" fill="#8ea88a" />
+        <path
+          d="M104 129v14m205-16v13"
+          stroke="#f4d599"
+          strokeWidth="5"
+          strokeLinecap="round"
+        />
+        <path
+          d="m370 73 3-10m-9 4 10 2M49 66l3-10m-9 4 10 2"
+          stroke="#9eb59b"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </g>
     </svg>
   );
 }
@@ -606,7 +643,12 @@ function Workspace({
                   <span className="heading-icon">
                     <Route size={22} />
                   </span>
-                  <h2 id="search-title">どこへおでかけしますか？</h2>
+                  <div>
+                    <h2 id="search-title">どこへおでかけしますか？</h2>
+                    <p className="section-description">
+                      行き先と日時を選んで、ゆとりのある一日へ。
+                    </p>
+                  </div>
                 </div>
                 <form onSubmit={handleSearch} noValidate>
                   <div className="location-fields">
