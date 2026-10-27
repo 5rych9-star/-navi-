@@ -36,6 +36,7 @@ export default function useTravelData(auth: AuthController) {
   const alive = useRef(false);
   const writing = useRef(false);
   const readable = useRef(guest);
+  const migrationWarning = useRef<string | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -53,7 +54,23 @@ export default function useTravelData(auth: AuthController) {
         alive.current = false;
       };
     }
-    readable.current = false;
+    try {
+      const local = repository.readLocal();
+      setData(local);
+      dataRef.current = local;
+      readable.current = true;
+    } catch (failure) {
+      readable.current = false;
+      setLoading(false);
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "端末内の登録情報を読み込めませんでした。",
+      );
+      return () => {
+        alive.current = false;
+      };
+    }
     setLoading(true);
     setError(null);
     void repository
@@ -63,14 +80,27 @@ export default function useTravelData(auth: AuthController) {
         setData(value);
         dataRef.current = value;
         readable.current = true;
+        migrationWarning.current = null;
+        setError(null);
       })
-      .catch(() => {
+      .catch((failure) => {
         if (!cancelled) {
-          setData(EMPTY);
-          dataRef.current = EMPTY;
-          setError(
-            "ご自身の登録情報を読み込めませんでした。接続と保存先の設定を確認して、再読み込みしてください。",
-          );
+          // A failed legacy cleanup never falls back to guest/another account.
+          // This owner's device data remains usable, including offline saves.
+          try {
+            const local = repository.readLocal();
+            setData(local);
+            dataRef.current = local;
+          } catch {
+            setData(EMPTY);
+            dataRef.current = EMPTY;
+            readable.current = false;
+          }
+          migrationWarning.current =
+            failure instanceof Error
+              ? failure.message
+              : "以前のサーバー保存分の削除を確認できません。再読み込みしてください。";
+          setError(migrationWarning.current);
         }
       })
       .finally(() => {
@@ -88,7 +118,7 @@ export default function useTravelData(auth: AuthController) {
         return false;
       writing.current = true;
       setBusy(true);
-      setError(null);
+      setError(migrationWarning.current);
       try {
         if (repository) await repository.save(next);
         else if (guest) {
@@ -105,7 +135,7 @@ export default function useTravelData(auth: AuthController) {
       } catch {
         if (alive.current)
           setError(
-            "保存できませんでした。接続と保存先の設定を確認して、もう一度お試しください。",
+            "この端末に保存できませんでした。ブラウザの保存設定や空き容量をご確認ください。",
           );
         return false;
       } finally {
@@ -136,12 +166,25 @@ export default function useTravelData(auth: AuthController) {
       if (!alive.current) return false;
       dataRef.current = EMPTY;
       setData(EMPTY);
+      migrationWarning.current = null;
       return true;
-    } catch {
-      if (alive.current)
-        setError(
-          "削除できませんでした。接続を確認して、もう一度お試しください。",
-        );
+    } catch (failure) {
+      if (alive.current) {
+        if (repository) {
+          try {
+            const local = repository.readLocal();
+            dataRef.current = local;
+            setData(local);
+          } catch {
+            /* Keep the last known owner-scoped state. */
+          }
+        }
+        migrationWarning.current =
+          failure instanceof Error
+            ? failure.message
+            : "削除できませんでした。ブラウザの保存設定をご確認ください。";
+        setError(migrationWarning.current);
+      }
       return false;
     } finally {
       writing.current = false;

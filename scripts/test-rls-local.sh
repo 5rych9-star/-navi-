@@ -81,6 +81,8 @@ navi_psql=("$navi_pg_bin/psql" -h "$navi_test_dir/socket" -p 55438 -U postgres -
 "${navi_psql[@]}" -f "$navi_test_dir/bootstrap.sql"
 "${navi_psql[@]}" -f "$navi_repo_dir/supabase/migrations/202610270001_private_travel_data.sql"
 "${navi_psql[@]}" -f "$navi_repo_dir/supabase/tests/private_travel_data.sql"
+"${navi_psql[@]}" -f "$navi_repo_dir/supabase/migrations/202610280001_device_only_travel_data.sql"
+"${navi_psql[@]}" -f "$navi_repo_dir/supabase/tests/device_only_travel_data.sql"
 "${navi_psql[@]}" <<'SQL'
 do $$
 begin

@@ -20,7 +20,7 @@ const contentTypes = {
 // The actual SDK still parses the fixture session and makes the scoped calls.
 async function mockAccountService(page) {
   const owner = "11111111-1111-4111-8111-111111111111";
-  let row = null;
+  const dataWrites = [];
   const routeHandler = async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -68,23 +68,18 @@ async function mockAccountService(page) {
       url.pathname === "/rest/v1/user_travel_data" &&
       url.searchParams.get("user_id") === `eq.${owner}`
     ) {
-      if (request.method() === "GET") return reply(200, row ? [row] : []);
-      if (request.method() === "POST") {
-        const next = request.postDataJSON();
-        if (next.user_id !== owner)
-          return reply(403, { message: "Fixture owner mismatch" });
-        row = next;
-        return reply(201, []);
+      if (request.method() === "GET") return reply(200, []);
+      if (["POST", "PATCH", "PUT"].includes(request.method())) {
+        dataWrites.push(request.method());
+        return reply(403, { message: "Server writes disabled" });
       }
-      if (request.method() === "DELETE") {
-        row = null;
-        return reply(204);
-      }
+      if (request.method() === "DELETE") return reply(204);
     }
     return reply(404, { message: "Unexpected fixture endpoint" });
   };
   await page.route("**/auth/v1/**", routeHandler);
   await page.route("**/rest/v1/user_travel_data*", routeHandler);
+  return { dataWrites };
 }
 
 // No SPA fallback: missing assets and requests outside the Pages prefix must
@@ -141,7 +136,7 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
       });
       try {
         const page = await context.newPage();
-        await mockAccountService(page);
+        const account = await mockAccountService(page);
         let tileRequests = 0;
         await page.route(
           "https://maps.gsi.go.jp/xyz/seamlessphoto/**",
@@ -220,6 +215,7 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
           .click();
         await page.locator(".leaflet-tile-loaded").first().waitFor();
         assert.ok(tileRequests > 0);
+        const storageBeforeGps = await page.evaluate(() => ({ ...localStorage }));
         await page
           .getByRole("button", { name: "現在地を表示", exact: true })
           .click();
@@ -233,7 +229,11 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
         await page
           .locator(".aerial-current-icon")
           .waitFor({ state: "detached" });
-        assert.equal(await page.evaluate(() => localStorage.length), 0);
+        assert.deepEqual(
+          await page.evaluate(() => ({ ...localStorage })),
+          storageBeforeGps,
+          "GPS表示は端末保存を書き換えないこと",
+        );
         await page
           .getByRole("button", { name: "航空写真を非表示", exact: true })
           .click();
@@ -259,6 +259,7 @@ test("公開用ビルドがルートと GitHub Pages のパスで表示・検索
           .getByRole("heading", { name: "中津駅への経路", exact: true })
           .waitFor();
         assert.ok((await page.getByRole("article").count()) > 0);
+        assert.deepEqual(account.dataWrites, [], "自宅や経路をサーバーに保存しないこと");
         assert.deepEqual(errors, []);
         assert.deepEqual(failedAssets, []);
       } finally {

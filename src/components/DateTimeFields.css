@@ -1,0 +1,63 @@
+/* Keep the field's border independent of Safari's native date editor.
+   The native picker and keyboard editing remain available. */
+.date-time-row > .input-group {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.date-time-row .date-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  border: 1px solid #aab6a6;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.date-time-row .date-input input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  min-block-size: 54px;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #293f35;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.date-time-row .date-input input::-webkit-date-and-time-value {
+  min-inline-size: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.date-time-row .date-input:focus-within {
+  outline: 3px solid #945c12;
+  outline-offset: 3px;
+}
+
+.date-time-row .date-input input:focus-visible {
+  outline: none;
+}
+
+.large-text .date-time-row .date-input input[type="date"] {
+  font-size: 1.08em;
+}
+
+.date-time-row .time-input {
+  border-color: #aab6a6;
+  border-radius: 8px;
+  box-shadow: none;
+}

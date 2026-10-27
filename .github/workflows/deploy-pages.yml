@@ -35,13 +35,16 @@ jobs:
         run: npm ci
 
       - name: Install browser for production smoke tests
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Run unit tests
         run: npm test
 
       - name: Verify responsive date and time fields
         run: npx playwright test e2e/layout.spec.ts
+
+      - name: Verify native date fields in WebKit
+        run: npm run test:webkit
 
       - name: Verify login and account isolation with HTTP fixtures
         run: npm run test:auth

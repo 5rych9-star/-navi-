@@ -13,6 +13,7 @@ const OWNER_B = "22222222-2222-4222-8222-222222222222";
 const EMAIL_A = "owner-a@example.test";
 const EMAIL_B = "owner-b@example.test";
 const SESSION_KEY = "nakatsu-auth-auth-fixture.supabase.co-v1";
+const accountKey = (owner: string) => `nakatsu-account-travel-v2:${owner}`;
 
 type Row = { user_id: string; profile: Profile | null; trips: SavedTrip[] };
 const profileA: Profile = {
@@ -132,8 +133,15 @@ async function fixtureProvider(page: Page) {
     method: string;
     owner: string | null;
     queryOwner: string | null;
+    url: string;
+    body: string | null;
   }[] = [];
-  const state = { failLoads: false, wrongOwner: false, invalidLogin: false };
+  const state = {
+    failLoads: false,
+    failDeletes: false,
+    wrongOwner: false,
+    invalidLogin: false,
+  };
   const unexpected: string[] = [];
 
   await page.route(`${PROVIDER}/**`, async (route) => {
@@ -146,6 +154,8 @@ async function fixtureProvider(page: Page) {
       method,
       owner,
       queryOwner: url.searchParams.get("user_id"),
+      url: request.url(),
+      body: request.postData(),
     });
     const respond = (status: number, body?: unknown) =>
       route.fulfill({
@@ -226,20 +236,20 @@ async function fixtureProvider(page: Page) {
         await respond(200, singular ? (row ?? null) : row ? [row] : []);
         return;
       }
-      if (method === "POST") {
-        const row = request.postDataJSON() as Row;
-        if (row.user_id !== owner) {
-          await respond(403, {
-            code: "42501",
-            message: "Fixture ownership check failed",
-          });
-          return;
-        }
-        rows.set(owner, structuredClone(row));
-        await respond(201, []);
+      if (["POST", "PATCH", "PUT"].includes(method)) {
+        // Match the read/delete-only migration: even an older client cannot
+        // store new home coordinates, labels, or itineraries on the server.
+        await respond(403, {
+          code: "42501",
+          message: "Server writes disabled",
+        });
         return;
       }
       if (method === "DELETE") {
+        if (state.failDeletes) {
+          await respond(503, { message: "Fixture deletion unavailable" });
+          return;
+        }
         rows.delete(owner);
         await respond(204);
         return;
@@ -369,7 +379,7 @@ test("SDKの新規登録は確認メール待ちとなり、自動ログイン�
   expect(fixture.unexpected).toEqual([]);
 });
 
-test("実SDKのログインは本人のクラウドデータだけを読み、ログアウト後は別利用者へ漏らさない", async ({
+test("旧サーバーデータを本人の端末へ移して削除し、更新・再読込・利用者切替でも位置を送らない", async ({
   page,
 }) => {
   const fixture = await fixtureProvider(page);
@@ -392,11 +402,16 @@ test("実SDKのログインは本人のクラウドデータだけを読み、�
     .getByRole("button", { name: "この内容で登録する", exact: true })
     .click();
   await expect(home).not.toBeVisible();
-  expect(fixture.rows.get(OWNER_A)?.profile?.nickname).toBe("利用者A更新");
+  expect(fixture.rows.has(OWNER_A)).toBe(false);
   const storage = await browserStorage(page);
   expect(JSON.stringify(storage)).not.toContain(FIXTURE_PASSWORD);
-  expect(JSON.stringify(storage)).not.toContain("更新したAの非公開自宅");
+  expect(storage.local[accountKey(OWNER_A)]).toContain("更新したAの非公開自宅");
+  expect(storage.local[accountKey(OWNER_A)]).toContain("利用者A更新");
   expect(storage.session[SESSION_KEY]).toBeTruthy();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "利用者A更新さんのご自宅", exact: true }),
+  ).toBeVisible();
   await navigate(page, "おでかけ予定");
   await expect(
     page.getByRole("article").filter({ hasText: "中津駅" }),
@@ -425,10 +440,25 @@ test("実SDKのログインは本人のクラウドデータだけを読み、�
   await expect(
     page.getByRole("article").filter({ hasText: "中津駅" }),
   ).toHaveCount(0);
-  for (const call of fixture.calls.filter((call) =>
+  expect(fixture.rows.has(OWNER_B)).toBe(false);
+  const dataCalls = fixture.calls.filter((call) =>
     call.path.startsWith("/rest/"),
-  ))
+  );
+  expect(dataCalls.some((call) => call.method === "DELETE")).toBe(true);
+  for (const call of dataCalls) {
     expect(call.queryOwner).toBe(`eq.${call.owner}`);
+    expect(["GET", "DELETE", "OPTIONS"]).toContain(call.method);
+    expect(call.body).toBeNull();
+  }
+  for (const privateValue of [
+    profileA.home.label,
+    profileB.home.label,
+    "更新したAの非公開自宅",
+    String(profileA.home.lat),
+    String(profileA.home.lng),
+  ]) {
+    expect(JSON.stringify(fixture.calls)).not.toContain(privateValue);
+  }
   expect(fixture.unexpected).toEqual([]);
 });
 
@@ -471,7 +501,7 @@ test("認証エラーと再設定メールを実SDK経由で扱い、成功を�
   expect(fixture.unexpected).toEqual([]);
 });
 
-test("クラウド読込失敗や他人の行を表示せず、端末内データへ勝手に戻らない", async ({
+test("旧サーバーの移行失敗を知らせ、他人やゲストの情報を表示しない", async ({
   page,
 }) => {
   const fixture = await fixtureProvider(page);
@@ -481,7 +511,7 @@ test("クラウド読込失敗や他人の行を表示せず、端末内デー�
   await login(page, EMAIL_A);
   await expect(
     page.getByText(
-      /登録情報を読み込めませんでした|ご自宅と予定を読み込めませんでした/,
+      /旧サーバー|以前のサーバー|サーバー.*削除|サーバー.*移行|登録情報を読み込めませんでした|ご自宅と予定を読み込めませんでした/,
     ),
   ).toBeVisible({ timeout: 20000 });
   await expect(
@@ -507,7 +537,7 @@ test("クラウド読込失敗や他人の行を表示せず、端末内デー�
     .toBeGreaterThan(readsBeforeRetry);
   await expect(
     page.getByText(
-      /登録情報を読み込めませんでした|ご自宅と予定を読み込めませんでした/,
+      /旧サーバー|以前のサーバー|サーバー.*削除|サーバー.*移行|登録情報を読み込めませんでした|ご自宅と予定を読み込めませんでした/,
     ),
   ).toBeVisible({ timeout: 20000 });
   await expect(
@@ -520,9 +550,10 @@ test("クラウド読込失敗や他人の行を表示せず、端末内デー�
   await expect(
     page.getByRole("heading", { name: "利用者Aさんのご自宅", exact: true }),
   ).toBeVisible();
-  expect(JSON.stringify(await browserStorage(page))).not.toContain(
+  expect((await browserStorage(page)).local[accountKey(OWNER_A)]).toContain(
     "Aさんの非公開の自宅",
   );
+  expect(fixture.rows.has(OWNER_A)).toBe(false);
   expect(fixture.unexpected).toEqual([]);
 });
 
@@ -671,4 +702,146 @@ test("認証用のセッション保存が拒否されても以前の端末内�
   ).toEqual(guestProfile);
   expect(fixture.calls).toHaveLength(0);
   expect(errors).toEqual([]);
+});
+
+test("新しい自宅と予定は端末にだけ保存し、座標・呼び名・経路IDをサーバーに送らない", async ({
+  page,
+}) => {
+  const fixture = await fixtureProvider(page);
+  fixture.rows.clear();
+  await page.goto("/");
+  await login(page, EMAIL_A);
+  await page
+    .getByRole("button", { name: "ご自宅を登録する", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "ご自宅を登録しましょう" });
+  await dialog.getByLabel("お名前（ニックネーム）").fill("端末の利用者");
+  await dialog.getByRole("button", { name: "大貞周辺", exact: true }).click();
+  await dialog.getByLabel("場所の呼び名（任意）").fill("端末だけの非公開住所");
+  await dialog
+    .getByRole("button", { name: "この内容で登録する", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await page.getByLabel("行きたい場所").selectOption("nakatsu-hospital");
+  await page.getByLabel("おでかけの日").fill("2026-11-20");
+  await page.getByLabel("着きたい時刻").fill("10:00");
+  await page.getByRole("button", { name: "この条件で経路をさがす" }).click();
+  await page
+    .getByRole("article")
+    .filter({ hasText: "お迎えのある経路" })
+    .first()
+    .getByRole("button", { name: "この経路を見る" })
+    .click();
+  await page.getByRole("button", { name: "申込内容の確認へ" }).click();
+  const booking = page.getByRole("dialog", { name: "お迎えの申込内容を確認" });
+  await booking.getByRole("checkbox").check();
+  await booking.getByRole("button", { name: "体験用の予定を保存する" }).click();
+  await expect(page.getByRole("article")).toContainText("中津市立中津市民病院");
+
+  const saved = (await browserStorage(page)).local[accountKey(OWNER_A)];
+  expect(saved).toContain("端末だけの非公開住所");
+  expect(saved).toContain("33.5665");
+  expect(saved).toContain("131.2047");
+  expect(saved).toContain("nakatsu-hospital");
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "端末の利用者さんのご自宅" }),
+  ).toBeVisible();
+  await navigate(page, "おでかけ予定");
+  await expect(page.getByRole("article")).toContainText("中津市立中津市民病院");
+  expect(fixture.rows.size).toBe(0);
+  expect(
+    fixture.calls.filter(
+      (call) =>
+        call.path.startsWith("/rest/") &&
+        !["GET", "DELETE", "OPTIONS"].includes(call.method),
+    ),
+  ).toEqual([]);
+  const sent = JSON.stringify(fixture.calls);
+  for (const value of [
+    "端末だけの非公開住所",
+    "端末の利用者",
+    "33.5665",
+    "131.2047",
+    "osada-33.566500-131.204700",
+  ]) {
+    expect(sent).not.toContain(value);
+  }
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("端末保存が拒否されたら旧サーバー行を削除せず、移行の失敗を知らせる", async ({
+  page,
+}) => {
+  const fixture = await fixtureProvider(page);
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("nakatsu-account-travel-v2:")) {
+        throw new DOMException(
+          "Fixture device storage denied",
+          "QuotaExceededError",
+        );
+      }
+      return original.call(this, key, value);
+    };
+  });
+  await page.goto("/");
+  await login(page, EMAIL_A);
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
+  expect(fixture.rows.get(OWNER_A)?.profile).toEqual(profileA);
+  expect(fixture.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+  expect(
+    (await browserStorage(page)).local[accountKey(OWNER_A)],
+  ).toBeUndefined();
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("旧サーバーの削除失敗後も本人の端末保存を使え、再試行で古い情報を削除する", async ({
+  page,
+}) => {
+  const fixture = await fixtureProvider(page);
+  fixture.state.failDeletes = true;
+  await page.goto("/");
+  await login(page, EMAIL_A);
+  await expect(
+    page.getByRole("heading", { name: "利用者Aさんのご自宅", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
+  expect((await browserStorage(page)).local[accountKey(OWNER_A)]).toContain(
+    profileA.home.label,
+  );
+  expect(fixture.rows.has(OWNER_A)).toBe(true);
+  await page
+    .getByRole("button", { name: "ご自宅の登録を確認・変更", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "ご自宅の登録を変更",
+    exact: true,
+  });
+  await dialog.getByLabel("お名前（ニックネーム）").fill("移行中の端末更新");
+  await dialog
+    .getByRole("button", { name: "この内容で登録する", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible();
+  fixture.state.failDeletes = false;
+  await page
+    .getByRole("button", { name: "登録情報を再読み込み", exact: true })
+    .click();
+  await expect.poll(() => fixture.rows.has(OWNER_A)).toBe(false);
+  await expect(
+    page.getByRole("heading", {
+      name: "移行中の端末更新さんのご自宅",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(
+    fixture.calls.filter(
+      (call) =>
+        call.path.startsWith("/rest/") &&
+        ["POST", "PATCH", "PUT"].includes(call.method),
+    ),
+  ).toEqual([]);
 });

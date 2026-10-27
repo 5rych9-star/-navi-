@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import AreaMap from "./components/AreaMap";
 import AuthDialog from "./components/AuthDialog";
+import "./components/DateTimeFields.css";
 import useGeolocation from "./hooks/useGeolocation";
 import useAuth from "./hooks/useAuth";
 import useTravelData from "./hooks/useTravelData";
@@ -330,10 +331,6 @@ function Workspace({
       return;
     }
     if (dataLoading || dataBusy) return;
-    if (dataError) {
-      setNotice("登録情報を再読み込みしてから、もう一度お試しください。");
-      return;
-    }
     setNickname(profile?.nickname ?? "");
     setHomeDraft(profile?.home ?? HOME_AREAS[0]);
     setHomeLabel(profile?.home.label ?? "");
@@ -353,7 +350,7 @@ function Workspace({
     const saved = await saveProfile(newProfile);
     if (!saved) {
       setModalError(
-        "保存できませんでした。接続・保存先の設定を確認して、もう一度お試しください。",
+        "保存できませんでした。ブラウザの保存設定や空き容量を確認して、もう一度お試しください。",
       );
       return;
     }
@@ -558,7 +555,7 @@ function Workspace({
             ) : auth.status === "unconfigured" ? (
               "現在は端末内の体験版です。ログインは接続設定後に利用できます。"
             ) : (
-              "ログインすると、ご自宅・予定を自分のアカウントに保存できます。"
+              "ログインして、ご自宅・予定をこの端末で管理できます。"
             )}
           </p>
         </div>
@@ -614,17 +611,17 @@ function Workspace({
               <div className="hero-copy">
                 <div className="eyebrow">
                   <span />
-                  中津の毎日を、バスでつなぐ
+                  中津のバス・おでかけ案内
                 </div>
                 <h1 ref={headingRef} tabIndex={-1}>
-                  おでかけを、
+                  中津のバスで、
                   <br />
-                  <span>もっと気軽に。</span>
+                  <span>今日はどこへ。</span>
                 </h1>
                 <p>
-                  ご自宅から行きたい場所まで。
+                  通院にも、買い物にも。
                   <br />
-                  バスの乗り換えを、やさしくご案内します。
+                  ご自宅からの行き方を調べられます。
                 </p>
               </div>
               <BusIllustration />
@@ -646,7 +643,7 @@ function Workspace({
                   <div>
                     <h2 id="search-title">どこへおでかけしますか？</h2>
                     <p className="section-description">
-                      行き先と日時を選んで、ゆとりのある一日へ。
+                      行き先と、到着したい日時を選んでください。
                     </p>
                   </div>
                 </div>
@@ -717,13 +714,15 @@ function Workspace({
                         <CalendarDays size={18} />
                         おでかけの日
                       </label>
-                      <input
-                        id="date"
-                        type="date"
-                        required
-                        value={date}
-                        onChange={(event) => setDate(event.target.value)}
-                      />
+                      <div className="date-input">
+                        <input
+                          id="date"
+                          type="date"
+                          required
+                          value={date}
+                          onChange={(event) => setDate(event.target.value)}
+                        />
+                      </div>
                     </div>
                     <div className="input-group">
                       <label htmlFor="arrival-time">
@@ -1251,7 +1250,7 @@ function Workspace({
               <Info size={20} />
               <p>
                 {auth.status === "signedIn"
-                  ? "ここに表示される予定は、ご自身のアカウントに保存した体験用のものです。"
+                  ? "ここに表示される予定は、この端末にご自身用として保存した体験用のものです。"
                   : "ここに表示される予定は、このブラウザに保存した体験用のものです。"}
                 バス事業者への予約・連絡は行われません。
               </p>
@@ -1389,8 +1388,8 @@ function Workspace({
                 <p>
                   {auth.status === "unconfigured"
                     ? "現在の端末内体験版では、お名前・自宅・予定をこのブラウザだけに保存します。"
-                    : "ログインすると、お名前・自宅・予定をSupabaseのデータベースに保存します。サーバー側のアクセス制限で、ログイン中のご本人だけが読み書きできます。旧体験版の端末内データは自動アップロードしません。"}
-                  GPSの現在地は履歴として保存しません。「現在地を自宅に設定」して登録を確定した場合だけ、その場所を自宅情報として保存します。航空写真の表示時には表示範囲とIPアドレスが国土地理院へ伝わります。共用端末では利用後にログアウトしてください。端末内の体験データは削除してからお使いください。
+                    : "ログイン後も、お名前・自宅・予定はこのブラウザ内にご自身用として保存します。新しく登録・変更した情報はサーバーに送信しません。以前サーバーに保存した情報は、この端末への移行に成功してからサーバー上のデータを削除します。移行できない場合は画面にお知らせします。"}
+                  別の端末には引き継がれず、ブラウザの保存データを消すと元に戻せません。GPSの現在地は履歴として保存しません。「現在地を自宅に設定」して登録を確定した場合だけ、その場所を自宅情報として保存します。航空写真の表示時には表示範囲とIPアドレスが国土地理院へ伝わります。共用端末では利用後にログアウトしてください。端末内の体験データは削除してからお使いください。
                 </p>
               </details>
               <details>
@@ -1417,7 +1416,7 @@ function Workspace({
                   <ChevronDown size={19} />
                 </summary>
                 <p>
-                  サンプルの経路計算は端末内で行いますが、ログイン・アカウントへの保存・航空写真の読み込みにはインターネット接続が必要です。未接続の端末内体験版では、このブラウザへの保存を利用できます。オフラインでの再読み込みや本当の運行情報には対応していません。
+                  サンプルの経路計算と自宅・予定の保存は端末内で行います。ログイン・以前の保存情報の移行・航空写真の読み込みにはインターネット接続が必要です。オフラインでのページの再読み込みや本当の運行情報には対応していません。
                 </p>
               </details>
             </section>
@@ -1428,7 +1427,7 @@ function Workspace({
                   <h2>登録情報の管理</h2>
                   <p>
                     {auth.status === "signedIn"
-                      ? "ご自身のアカウントに保存した自宅・予定を削除できます。ログイン用アカウントは残ります。"
+                      ? "このブラウザのご自身用データと、以前サーバーに保存した自宅・予定を削除できます。ログイン用アカウントは残ります。"
                       : "このブラウザに保存した、ご自宅とすべての予定を削除できます。"}
                   </p>
                 </div>
@@ -1582,7 +1581,7 @@ function Workspace({
             <p className="privacy-note">
               <ShieldCheck size={18} />
               {auth.status === "signedIn"
-                ? "登録内容はご自身のアカウントに保存されます。"
+                ? "登録内容はこのブラウザ内にご自身用として保存します。自宅の位置をサーバーへ送信しません。"
                 : "登録情報はこのブラウザだけに保存されます。"}
             </p>
             {modalError && (
@@ -1694,7 +1693,7 @@ function Workspace({
         <Modal title="登録情報を削除しますか？" onClose={() => setModal(null)}>
           <p className="modal-description">
             {auth.status === "signedIn"
-              ? "ご自身のアカウントに保存したお名前・自宅・予定を削除します。ログイン用アカウントは残ります。"
+              ? "このブラウザのご自身用データと、以前サーバーに保存したお名前・自宅・予定を削除します。ログイン用アカウントは残ります。"
               : "このブラウザに保存したお名前、ご自宅の場所、すべてのおでかけ予定を削除します。"}
             削除した情報は元に戻せません。
           </p>
@@ -1726,7 +1725,7 @@ function Workspace({
                 setModal(null);
                 setNotice(
                   auth.status === "signedIn"
-                    ? "アカウントの自宅・予定を削除しました。"
+                    ? "ご自身の自宅・予定を削除しました。"
                     : "このブラウザの登録情報を削除しました。",
                 );
               }}
